@@ -1,6 +1,10 @@
 import os
+import io
+import base64
 from typing import List, Dict
 from pypdf import PdfReader
+import fitz  # PyMuPDF
+from PIL import Image
 from openai import OpenAI
 from pinecone import Pinecone
 import re, hashlib
@@ -25,6 +29,154 @@ oai = OpenAI(api_key=OPENAI_API_KEY)
 def _read_pdf_text(path: str) -> str:
     reader = PdfReader(path)
     return "\n".join([page.extract_text() or "" for page in reader.pages])
+
+def _pil_image_to_base64(image: Image.Image) -> str:
+    """Convert PIL Image to base64 string for API transmission."""
+    buffered = io.BytesIO()
+    # Convert to RGB if necessary (handles RGBA, CMYK, etc.)
+    if image.mode not in ('RGB', 'L'):  # L is grayscale
+        image = image.convert('RGB')
+    image.save(buffered, format="PNG", optimize=True)
+    return base64.b64encode(buffered.getvalue()).decode('utf-8')
+
+def _describe_image(img_base64: str, page_num: int) -> str:
+    """
+    Use GPT-4 Vision to describe the content of an image.
+    Returns a text description that can be embedded alongside PDF text.
+    """
+    try:
+        print(f"DEBUG: Calling GPT-4o Vision for image on page {page_num}")
+        response = oai.chat.completions.create(
+            model="gpt-4o",  # gpt-4o has vision capabilities
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "Describe this image in detail. Include any text, charts, diagrams, "
+                                "tables, or visual information. If it contains data or specific details, "
+                                "extract them precisely. This will be used for document search."
+                            )
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{img_base64}",
+                                "detail": "high"
+                            }
+                        }
+                    ]
+                }
+            ],
+            max_tokens=500,
+            temperature=0.1
+        )
+        description = response.choices[0].message.content.strip()
+        print(f"DEBUG: Vision API returned description ({len(description)} chars): {description[:100]}...")
+        return description
+    except Exception as e:
+        print(f"Warning: Failed to describe image on page {page_num}: {e}")
+        import traceback
+        traceback.print_exc()
+        return ""
+
+def _extract_images_from_pdf(path: str) -> List[tuple[str, int]]:
+    """
+    Extract all embedded images from a PDF using PyMuPDF.
+    Returns list of tuples: (base64_image, page_number)
+    """
+    images = []
+    try:
+        pdf_document = fitz.open(path)
+        print(f"DEBUG: Opening PDF with {len(pdf_document)} pages")
+
+        for page_num in range(len(pdf_document)):
+            page = pdf_document[page_num]
+            image_list = page.get_images(full=True)
+            print(f"DEBUG: Page {page_num + 1} has {len(image_list)} images")
+
+            # Extract each image from the page
+            for img_index, img_info in enumerate(image_list):
+                xref = img_info[0]
+                try:
+                    base_image = pdf_document.extract_image(xref)
+                    image_bytes = base_image["image"]
+
+                    # Load image using PIL
+                    pil_image = Image.open(io.BytesIO(image_bytes))
+                    print(f"DEBUG: Image {img_index} on page {page_num + 1}: {pil_image.width}x{pil_image.height}px, mode={pil_image.mode}")
+
+                    # Skip very small images (likely decorative/icons)
+                    if pil_image.width < 50 or pil_image.height < 50:
+                        print(f"DEBUG: Skipping small image {img_index} ({pil_image.width}x{pil_image.height}px)")
+                        continue
+
+                    # Resize if too large to save API costs
+                    max_size = 2048
+                    if max(pil_image.width, pil_image.height) > max_size:
+                        ratio = max_size / max(pil_image.width, pil_image.height)
+                        new_size = (int(pil_image.width * ratio), int(pil_image.height * ratio))
+                        pil_image = pil_image.resize(new_size, Image.Resampling.LANCZOS)
+                        print(f"DEBUG: Resized image to {new_size[0]}x{new_size[1]}px")
+
+                    img_base64 = _pil_image_to_base64(pil_image)
+                    images.append((img_base64, page_num + 1))  # 1-indexed page numbers
+                    print(f"DEBUG: Successfully extracted and encoded image {img_index} from page {page_num + 1}")
+
+                except Exception as e:
+                    print(f"Warning: Could not extract image {img_index} from page {page_num + 1}: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    continue
+
+        pdf_document.close()
+        print(f"DEBUG: Total images extracted: {len(images)}")
+        return images
+    except Exception as e:
+        print(f"Warning: Failed to extract images from PDF: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
+
+def _read_pdf_content_with_images(path: str) -> str:
+    """
+    Extract both text and visual content from a PDF.
+    Returns combined text with image descriptions interspersed.
+    """
+    print(f"DEBUG: Starting PDF content extraction from {path}")
+
+    # Extract text first
+    text_content = _read_pdf_text(path)
+    print(f"DEBUG: Extracted {len(text_content)} chars of text")
+
+    # Extract and describe images
+    images = _extract_images_from_pdf(path)
+
+    if not images:
+        print("DEBUG: No images found in PDF, returning text only")
+        return text_content
+
+    print(f"DEBUG: Processing {len(images)} images with Vision API...")
+    # Describe each image
+    image_descriptions = []
+    for img_base64, page_num in images:
+        desc = _describe_image(img_base64, page_num)
+        if desc:
+            image_descriptions.append(f"\n[PAGE {page_num} IMAGE]: {desc}\n")
+            print(f"DEBUG: Added description for page {page_num}")
+
+    # Combine text and image descriptions
+    all_content = text_content
+    if image_descriptions:
+        all_content += "\n\n=== VISUAL CONTENT FROM DOCUMENT ===\n"
+        all_content += "\n".join(image_descriptions)
+        print(f"DEBUG: Final content length: {len(all_content)} chars (text: {len(text_content)}, images: {len(all_content) - len(text_content)})")
+    else:
+        print("DEBUG: No image descriptions generated")
+
+    return all_content
 
 def _chunk_text(text: str, max_chars: int = 3000, overlap: int = 400):
     """
@@ -91,10 +243,11 @@ def upsert_chunks(tenant_code: str, user_code: str, doc_filename: str, chunks: L
     return len(vectors)
 
 def pdf_to_pinecone(file_path: str, tenant_code: str, user_code: str, stored_filename: str) -> int:
-    text = _read_pdf_text(file_path)
-    if not text.strip():
+    # Extract both text and visual content from PDF
+    content = _read_pdf_content_with_images(file_path)
+    if not content.strip():
         return 0
-    chunks = _chunk_text(text)
+    chunks = _chunk_text(content)
     return upsert_chunks(tenant_code, user_code, stored_filename, chunks)
 
 def search(tenant_code: str, query: str, top_k: int = 8, filter_user_code: str | None = None):
