@@ -26,3 +26,9 @@ Thumbs.db
 *.egg-info/
 dist/
 build/
+
+# Uploaded documents
+uploaded_pdfs/
+
+# Claude Code documentation
+CLAUDE.md
