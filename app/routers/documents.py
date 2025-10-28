@@ -4,11 +4,14 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy.orm import Session
 from ..db import get_db
-from ..models import Document
-from ..security import require_caller, require_admin, Caller
+from ..models import Document # We get the User model from 'models'
+from .. import models          # <--- 1. Import 'models'
 from ..schemas import UploadResponse, DocumentOut
 from typing import List
 from ..rag import pdf_to_pinecone
+from ..auth import get_current_user  # <--- 2. Import your new auth function
+
+# --- 3. REMOVED old auth imports (require_caller, require_admin, Caller) ---
 
 UPLOAD_DIR = "uploaded_pdfs"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -18,17 +21,18 @@ router = APIRouter(prefix="/documents", tags=["Documents"])
 @router.post("/upload", response_model=UploadResponse)
 def upload_pdf(
     file: UploadFile = File(...),
-    caller: Caller = Depends(require_caller),
+    # --- 4. USE the new dependency ---
+    current_user: models.User = Depends(get_current_user), 
     db: Session = Depends(get_db),
 ):
-    # Only admin or active user can upload. If stricter: use require_admin
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
-    # Unique file naming: "<tenant>_<user>_<uuid>.pdf" - allows multiple PDFs per user
-    user_suffix = caller.user.user_code.split('-', 1)[1] if '-' in caller.user.user_code else caller.user.user_code
+    # --- 5. UPDATE logic to use 'current_user' ---
+    # The 'tenant' is now 'current_user.company'
+    user_suffix = current_user.user_code.split('-', 1)[1] if '-' in current_user.user_code else current_user.user_code
     unique_id = uuid.uuid4().hex[:8]
-    stored_name = f"{caller.tenant.tenant_code}_{user_suffix}_{unique_id}.pdf"
+    stored_name = f"{current_user.company.tenant_code}_{user_suffix}_{unique_id}.pdf"
     path = os.path.join(UPLOAD_DIR, stored_name)
 
     content = file.file.read()
@@ -36,10 +40,10 @@ def upload_pdf(
         f.write(content)
 
     doc = Document(
-        company_id=caller.tenant.id,
-        uploader_id=caller.user.id,
-        tenant_code=caller.tenant.tenant_code,
-        user_code=caller.user.user_code,
+        company_id=current_user.company_id,      # <-- Changed
+        uploader_id=current_user.id,             # <-- Changed
+        tenant_code=current_user.company.tenant_code, # <-- Changed
+        user_code=current_user.user_code,        # <-- Changed
         filename=stored_name,
         original_name=file.filename,
         mime_type=file.content_type or "application/pdf",
@@ -50,7 +54,12 @@ def upload_pdf(
     db.refresh(doc)
 
     try:
-        chunks = pdf_to_pinecone(path, caller.tenant.tenant_code, caller.user.user_code, stored_name)
+        chunks = pdf_to_pinecone(
+            path, 
+            current_user.company.tenant_code, # <-- Changed
+            current_user.user_code,           # <-- Changed
+            stored_name
+        )
         doc.num_chunks = chunks
         db.commit()
     except Exception as e:
@@ -63,7 +72,8 @@ def upload_pdf(
 
 @router.get("", response_model=List[DocumentOut])
 def list_documents(
-    caller: Caller = Depends(require_caller),
+    # --- 6. USE new dependency ---
+    current_user: models.User = Depends(get_current_user), 
     db: Session = Depends(get_db),
     my_docs_only: bool = False,
 ):
@@ -72,18 +82,20 @@ def list_documents(
     - Admins can see all documents in their tenant
     - Regular users can see all tenant docs by default, or set my_docs_only=true to see only their uploads
     """
-    query = db.query(Document).filter(Document.company_id == caller.tenant.id)
+    # --- 7. UPDATE logic to use 'current_user' ---
+    query = db.query(Document).filter(Document.company_id == current_user.company_id) # <-- Changed
 
     # If user wants only their documents or if they're not an admin
-    if my_docs_only or caller.user.role != "admin":
-        query = query.filter(Document.uploader_id == caller.user.id)
+    if my_docs_only or current_user.role != "admin": # <-- Changed
+        query = query.filter(Document.uploader_id == current_user.id) # <-- Changed
 
     return query.order_by(Document.created_at.desc()).all()
 
 @router.delete("/{document_id}")
 def delete_document(
     document_id: int,
-    caller: Caller = Depends(require_caller),
+    # --- 8. USE new dependency ---
+    current_user: models.User = Depends(get_current_user), 
     db: Session = Depends(get_db),
 ):
     """
@@ -94,15 +106,16 @@ def delete_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
+    # --- 9. UPDATE logic to use 'current_user' ---
     # Check tenant isolation
-    if doc.company_id != caller.tenant.id:
+    if doc.company_id != current_user.company_id: # <-- Changed
         raise HTTPException(
             status_code=403,
             detail="Access denied: This document belongs to a different tenant"
         )
 
     # Check authorization: owner or admin can delete
-    if doc.uploader_id != caller.user.id and caller.user.role != "admin":
+    if doc.uploader_id != current_user.id and current_user.role != "admin": # <-- Changed
         raise HTTPException(
             status_code=403,
             detail="Access denied: You can only delete your own documents unless you are an admin"

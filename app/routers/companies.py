@@ -6,6 +6,7 @@ from ..db import get_db, Base, engine
 from ..models import Company, User
 from ..schemas import CompanyCreate, CompanyOut, UserCreate, UserOut
 from ..security import require_superadmin
+from ..auth import get_current_user  # <--- 1. IMPORT the new dependency
 
 router = APIRouter(prefix="/superadmin/companies", tags=["Superadmin"])
 

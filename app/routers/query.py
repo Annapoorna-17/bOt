@@ -1,24 +1,32 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from ..db import get_db
-from ..security import require_caller, Caller
+# --- 1. Import new auth and models ---
+from ..auth import get_current_user
+from .. import models
 from ..schemas import QueryRequest, QueryAnswer
 from ..rag import search, synthesize_answer
+
+# --- 2. REMOVED old auth imports (require_caller, Caller) ---
 
 router = APIRouter(prefix="/query", tags=["Query"])
 
 @router.post("", response_model=QueryAnswer)
 def ask(
     payload: QueryRequest,
-    caller: Caller = Depends(require_caller),
+    # --- 3. USE new dependency ---
+    current_user: models.User = Depends(get_current_user), 
     db: Session = Depends(get_db),
 ):
+    # --- 4. UPDATE logic to use 'current_user' ---
     # Tenant-scoped search. Optional per-user filter.
     matches = search(
-        tenant_code=caller.tenant.tenant_code,
+        # 'caller.tenant' is now 'current_user.company'
+        tenant_code=current_user.company.tenant_code, # <-- Changed
         query=payload.question,
         top_k=payload.top_k,
-        filter_user_code=caller.user.user_code if payload.user_filter else None
+        # 'caller.user' is now 'current_user'
+        filter_user_code=current_user.user_code if payload.user_filter else None # <-- Changed
     )
     if not matches:
         return QueryAnswer(answer="I don't have enough information to answer that.", sources=[])

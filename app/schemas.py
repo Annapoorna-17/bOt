@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List
 from datetime import datetime
 
@@ -30,6 +30,10 @@ class UserBase(BaseModel):
     user_code: str
     role: str = Field(pattern="^(admin|user)$")
 
+    # --- FIELD ADDED ---
+    # Added email to base, as it's common
+    email: EmailStr
+
 
 class UserCreate(BaseModel):
     tenant_code: str
@@ -38,20 +42,27 @@ class UserCreate(BaseModel):
     role: str = Field(pattern="^(admin|user)$")
 
      # NEW FIELDS
-    email: str
+    email: EmailStr  # <--- 2. CHANGED to EmailStr for consistency
     address: Optional[str] = None
     contact_number: Optional[str] = None
     # website: Optional[str] = None
+
+    # --- FIELD ADDED FOR AUTH ---
+    # Add password field for registration
+    password: str
 
 class UserOut(BaseModel):
     id: int
     display_name: str
     user_code: str
     role: str
-    api_key: str
+    
+    # --- FIELD MODIFIED FOR AUTH ---
+    # Made api_key optional, as password-users might not have one
+    api_key: Optional[str] = None
 
     # NEW FIELDS
-    email: str
+    email: EmailStr
     address: Optional[str] = None
     contact_number: Optional[str] = None# NEW FIELDS
     email: str
@@ -61,6 +72,29 @@ class UserOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+        # --- NEW SCHEMAS ADDED FOR AUTHENTICATION ---
+
+class Token(BaseModel):
+    """Schema for the login response."""
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+
+class TokenData(BaseModel):
+    """Schema for the data encoded in the JWT."""
+    sub: str # 'sub' is standard for 'subject', we'll use user's email
+    type: str # We'll use this to differentiate 'access' vs 'refresh'
+
+class PasswordResetRequest(BaseModel):
+    """Schema for requesting a password reset."""
+    email: EmailStr
+
+class PasswordResetConfirm(BaseModel):
+    """Schema for confirming the password reset."""
+    new_password: str
+
+# --- END OF NEW SCHEMAS ---
 
 
 class UploadResponse(BaseModel):
