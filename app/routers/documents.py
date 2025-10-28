@@ -8,31 +8,46 @@ from ..models import Document # We get the User model from 'models'
 from .. import models          # <--- 1. Import 'models'
 from ..schemas import UploadResponse, DocumentOut
 from typing import List
-from ..rag import pdf_to_pinecone
+from ..rag import document_to_pinecone
 from ..auth import get_current_user  # <--- 2. Import your new auth function
 
 # --- 3. REMOVED old auth imports (require_caller, require_admin, Caller) ---
 
-UPLOAD_DIR = "uploaded_pdfs"
+UPLOAD_DIR = "uploaded_documents"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# Supported file extensions
+SUPPORTED_EXTENSIONS = {
+    '.pdf', '.docx', '.doc', '.xlsx', '.xls',
+    '.pptx', '.ppt', '.txt', '.csv', '.md',
+    '.rst', '.log'
+}
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
 
 @router.post("/upload", response_model=UploadResponse)
-def upload_pdf(
+def upload_document(
     file: UploadFile = File(...),
     # --- 4. USE the new dependency ---
-    current_user: models.User = Depends(get_current_user), 
+    current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+    # Validate file extension
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Filename is required")
+
+    file_ext = os.path.splitext(file.filename.lower())[1]
+    if file_ext not in SUPPORTED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type. Supported types: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
+        )
 
     # --- 5. UPDATE logic to use 'current_user' ---
     # The 'tenant' is now 'current_user.company'
     user_suffix = current_user.user_code.split('-', 1)[1] if '-' in current_user.user_code else current_user.user_code
     unique_id = uuid.uuid4().hex[:8]
-    stored_name = f"{current_user.company.tenant_code}_{user_suffix}_{unique_id}.pdf"
+    stored_name = f"{current_user.company.tenant_code}_{user_suffix}_{unique_id}{file_ext}"
     path = os.path.join(UPLOAD_DIR, stored_name)
 
     content = file.file.read()
@@ -46,7 +61,7 @@ def upload_pdf(
         user_code=current_user.user_code,        # <-- Changed
         filename=stored_name,
         original_name=file.filename,
-        mime_type=file.content_type or "application/pdf",
+        mime_type=file.content_type or "application/octet-stream",
         status="indexed",
     )
     db.add(doc)
@@ -54,8 +69,8 @@ def upload_pdf(
     db.refresh(doc)
 
     try:
-        chunks = pdf_to_pinecone(
-            path, 
+        chunks = document_to_pinecone(
+            path,
             current_user.company.tenant_code, # <-- Changed
             current_user.user_code,           # <-- Changed
             stored_name

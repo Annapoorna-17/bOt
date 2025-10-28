@@ -25,11 +25,18 @@ from ..schemas import (
     UploadResponse, DocumentOut, QueryRequest, QueryAnswer,
     UserCreate, UserOut, UserUpdate, WebsiteSubmit, WebsiteResponse, WebsiteOut
 )
-from ..rag import pdf_to_pinecone, search, synthesize_answer
+from ..rag import document_to_pinecone, search, synthesize_answer
 from ..scraper import scrape_and_index_website
 
-UPLOAD_DIR = "uploaded_pdfs"
+UPLOAD_DIR = "uploaded_documents"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# Supported file extensions
+SUPPORTED_EXTENSIONS = {
+    '.pdf', '.docx', '.doc', '.xlsx', '.xls',
+    '.pptx', '.ppt', '.txt', '.csv', '.md',
+    '.rst', '.log'
+}
 
 PROFILE_IMAGES_DIR = "profile_images"
 os.makedirs(PROFILE_IMAGES_DIR, exist_ok=True)
@@ -42,24 +49,32 @@ router = APIRouter(prefix="/t", tags=["Tenant-Scoped API"])
 # ============ Document Endpoints ============
 
 @router.post("/{tenant_code}/documents/upload", response_model=UploadResponse)
-def upload_pdf_tenant(
+def upload_document_tenant(
     tenant_code: str,
     file: UploadFile = File(...),
     x_user_code: str = Header(..., alias="X-User-Code"),
     x_api_key: str = Header(..., alias="X-API-Key"),
     db: Session = Depends(get_db),
 ):
-    """Upload a PDF document for the specified tenant."""
+    """Upload a document for the specified tenant. Supports PDF, DOCX, XLSX, PPTX, CSV, TXT, MD, and more."""
     # Get caller using tenant from path
     caller = require_caller_with_tenant_in_path(tenant_code, x_user_code, x_api_key, db)
 
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+    # Validate file extension
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Filename is required")
 
-    # Unique file naming: "<tenant>_<user>_<uuid>.pdf"
+    file_ext = os.path.splitext(file.filename.lower())[1]
+    if file_ext not in SUPPORTED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type. Supported types: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
+        )
+
+    # Unique file naming: "<tenant>_<user>_<uuid>.<ext>"
     user_suffix = caller.user.user_code.split('-', 1)[1] if '-' in caller.user.user_code else caller.user.user_code
     unique_id = uuid.uuid4().hex[:8]
-    stored_name = f"{caller.tenant.tenant_code}_{user_suffix}_{unique_id}.pdf"
+    stored_name = f"{caller.tenant.tenant_code}_{user_suffix}_{unique_id}{file_ext}"
     path = os.path.join(UPLOAD_DIR, stored_name)
 
     content = file.file.read()
@@ -73,7 +88,7 @@ def upload_pdf_tenant(
         user_code=caller.user.user_code,
         filename=stored_name,
         original_name=file.filename,
-        mime_type=file.content_type or "application/pdf",
+        mime_type=file.content_type or "application/octet-stream",
         status="indexed",
     )
     db.add(doc)
@@ -81,7 +96,7 @@ def upload_pdf_tenant(
     db.refresh(doc)
 
     try:
-        chunks = pdf_to_pinecone(path, caller.tenant.tenant_code, caller.user.user_code, stored_name)
+        chunks = document_to_pinecone(path, caller.tenant.tenant_code, caller.user.user_code, stored_name)
         doc.num_chunks = chunks
         db.commit()
     except Exception as e:

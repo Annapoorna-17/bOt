@@ -1,6 +1,7 @@
 import os
 import io
 import base64
+import csv
 from typing import List, Dict
 from pypdf import PdfReader
 import fitz  # PyMuPDF
@@ -8,6 +9,27 @@ from PIL import Image
 from openai import OpenAI
 from pinecone import Pinecone
 import re, hashlib
+
+# Import libraries for different document types
+try:
+    from docx import Document as DocxDocument
+except ImportError:
+    DocxDocument = None
+
+try:
+    from openpyxl import load_workbook
+except ImportError:
+    load_workbook = None
+
+try:
+    from pptx import Presentation
+except ImportError:
+    Presentation = None
+
+try:
+    import chardet
+except ImportError:
+    chardet = None
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-large")
@@ -178,6 +200,174 @@ def _read_pdf_content_with_images(path: str) -> str:
 
     return all_content
 
+def _read_docx_text(path: str) -> str:
+    """Extract text from DOCX files."""
+    if DocxDocument is None:
+        raise RuntimeError("python-docx library not installed. Install with: pip install python-docx")
+
+    print(f"DEBUG: Extracting text from DOCX: {path}")
+    doc = DocxDocument(path)
+
+    # Extract text from paragraphs
+    paragraphs = [para.text for para in doc.paragraphs if para.text.strip()]
+
+    # Extract text from tables
+    tables_text = []
+    for table in doc.tables:
+        for row in table.rows:
+            row_text = " | ".join([cell.text.strip() for cell in row.cells])
+            if row_text.strip():
+                tables_text.append(row_text)
+
+    content = "\n".join(paragraphs)
+    if tables_text:
+        content += "\n\n=== TABLES ===\n" + "\n".join(tables_text)
+
+    print(f"DEBUG: Extracted {len(content)} chars from DOCX")
+    return content
+
+def _read_xlsx_text(path: str) -> str:
+    """Extract text from XLSX files."""
+    if load_workbook is None:
+        raise RuntimeError("openpyxl library not installed. Install with: pip install openpyxl")
+
+    print(f"DEBUG: Extracting text from XLSX: {path}")
+    wb = load_workbook(path, data_only=True)
+
+    all_content = []
+    for sheet_name in wb.sheetnames:
+        sheet = wb[sheet_name]
+        all_content.append(f"\n=== SHEET: {sheet_name} ===\n")
+
+        for row in sheet.iter_rows(values_only=True):
+            # Filter out None and empty values, convert to string
+            row_values = [str(cell) for cell in row if cell is not None and str(cell).strip()]
+            if row_values:
+                all_content.append(" | ".join(row_values))
+
+    content = "\n".join(all_content)
+    print(f"DEBUG: Extracted {len(content)} chars from XLSX")
+    return content
+
+def _read_pptx_text(path: str) -> str:
+    """Extract text from PPTX files."""
+    if Presentation is None:
+        raise RuntimeError("python-pptx library not installed. Install with: pip install python-pptx")
+
+    print(f"DEBUG: Extracting text from PPTX: {path}")
+    prs = Presentation(path)
+
+    all_content = []
+    for slide_num, slide in enumerate(prs.slides, 1):
+        all_content.append(f"\n=== SLIDE {slide_num} ===\n")
+
+        for shape in slide.shapes:
+            if hasattr(shape, "text") and shape.text.strip():
+                all_content.append(shape.text)
+
+            # Extract text from tables in slides
+            if shape.shape_type == 19:  # Table
+                try:
+                    for row in shape.table.rows:
+                        row_text = " | ".join([cell.text.strip() for cell in row.cells])
+                        if row_text.strip():
+                            all_content.append(row_text)
+                except:
+                    pass
+
+    content = "\n".join(all_content)
+    print(f"DEBUG: Extracted {len(content)} chars from PPTX")
+    return content
+
+def _read_txt_text(path: str) -> str:
+    """Extract text from plain text files with encoding detection."""
+    print(f"DEBUG: Extracting text from TXT: {path}")
+
+    # Try to detect encoding
+    encoding = 'utf-8'
+    if chardet:
+        with open(path, 'rb') as f:
+            raw_data = f.read()
+            result = chardet.detect(raw_data)
+            encoding = result['encoding'] or 'utf-8'
+            print(f"DEBUG: Detected encoding: {encoding}")
+
+    try:
+        with open(path, 'r', encoding=encoding) as f:
+            content = f.read()
+    except UnicodeDecodeError:
+        # Fallback to utf-8 with error handling
+        print(f"DEBUG: Failed with {encoding}, falling back to utf-8 with error handling")
+        with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+
+    print(f"DEBUG: Extracted {len(content)} chars from TXT")
+    return content
+
+def _read_csv_text(path: str) -> str:
+    """Extract text from CSV files."""
+    print(f"DEBUG: Extracting text from CSV: {path}")
+
+    # Try to detect encoding
+    encoding = 'utf-8'
+    if chardet:
+        with open(path, 'rb') as f:
+            raw_data = f.read()
+            result = chardet.detect(raw_data)
+            encoding = result['encoding'] or 'utf-8'
+            print(f"DEBUG: Detected encoding: {encoding}")
+
+    all_content = []
+    try:
+        with open(path, 'r', encoding=encoding, newline='') as f:
+            reader = csv.reader(f)
+            for row in reader:
+                row_text = " | ".join([cell.strip() for cell in row if cell.strip()])
+                if row_text:
+                    all_content.append(row_text)
+    except UnicodeDecodeError:
+        # Fallback to utf-8 with error handling
+        print(f"DEBUG: Failed with {encoding}, falling back to utf-8 with error handling")
+        with open(path, 'r', encoding='utf-8', errors='ignore', newline='') as f:
+            reader = csv.reader(f)
+            for row in reader:
+                row_text = " | ".join([cell.strip() for cell in row if cell.strip()])
+                if row_text:
+                    all_content.append(row_text)
+
+    content = "\n".join(all_content)
+    print(f"DEBUG: Extracted {len(content)} chars from CSV")
+    return content
+
+def _extract_document_content(path: str, file_extension: str) -> str:
+    """
+    Extract text content from various document formats.
+    Returns the extracted text content.
+    """
+    ext = file_extension.lower()
+
+    print(f"DEBUG: Extracting content from {ext} file: {path}")
+
+    if ext == '.pdf':
+        return _read_pdf_content_with_images(path)
+    elif ext in ['.docx', '.doc']:
+        return _read_docx_text(path)
+    elif ext in ['.xlsx', '.xls']:
+        return _read_xlsx_text(path)
+    elif ext in ['.pptx', '.ppt']:
+        return _read_pptx_text(path)
+    elif ext == '.csv':
+        return _read_csv_text(path)
+    elif ext in ['.txt', '.md', '.rst', '.log']:
+        return _read_txt_text(path)
+    else:
+        # For unknown types, try reading as text
+        print(f"DEBUG: Unknown extension {ext}, attempting text extraction")
+        try:
+            return _read_txt_text(path)
+        except Exception as e:
+            raise RuntimeError(f"Unsupported file type: {ext}. Error: {e}")
+
 def _chunk_text(text: str, max_chars: int = 3000, overlap: int = 400):
     """
     Simple, fast chunker that respects sentence boundaries when possible.
@@ -243,13 +433,28 @@ def upsert_chunks(tenant_code: str, user_code: str, doc_filename: str, chunks: L
     index.upsert(vectors=vectors, namespace=tenant_code)
     return len(vectors)
 
-def pdf_to_pinecone(file_path: str, tenant_code: str, user_code: str, stored_filename: str) -> int:
-    # Extract both text and visual content from PDF
-    content = _read_pdf_content_with_images(file_path)
+def document_to_pinecone(file_path: str, tenant_code: str, user_code: str, stored_filename: str) -> int:
+    """
+    Extract content from any supported document format and index to Pinecone.
+    Supports: PDF, DOCX, XLSX, PPTX, CSV, TXT, MD, and more.
+    """
+    # Get file extension from stored filename
+    _, file_extension = os.path.splitext(stored_filename)
+
+    # Extract content based on file type
+    content = _extract_document_content(file_path, file_extension)
+
     if not content.strip():
+        print(f"WARNING: No content extracted from {stored_filename}")
         return 0
+
     chunks = _chunk_text(content)
     return upsert_chunks(tenant_code, user_code, stored_filename, chunks)
+
+# Keep backward compatibility
+def pdf_to_pinecone(file_path: str, tenant_code: str, user_code: str, stored_filename: str) -> int:
+    """Backward compatibility wrapper for document_to_pinecone."""
+    return document_to_pinecone(file_path, tenant_code, user_code, stored_filename)
 
 def search(tenant_code: str, query: str, top_k: int = 8, filter_user_code: str | None = None):
     q_emb = oai.embeddings.create(model=EMBED_MODEL, input=[query]).data[0].embedding
