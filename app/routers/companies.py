@@ -82,6 +82,9 @@ def create_company_admin(
         user_code=payload.user_code,
         role="admin",
         api_key=api_key,
+        email=payload.email,
+        address=payload.address,
+        contact_number=payload.contact_number,
     )
     db.add(user)
     db.commit()

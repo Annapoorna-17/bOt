@@ -19,6 +19,7 @@ class Company(Base):
 
     users = relationship("User", back_populates="company")
     documents = relationship("Document", back_populates="company")
+    websites = relationship("Website", back_populates="company")
 
 class User(Base):
     __tablename__ = "users"
@@ -32,6 +33,7 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False)
     address = Column(Text, nullable=True)
     contact_number = Column(String(20), nullable=True)
+    profile_image = Column(String(512), nullable=True)  # Stores filename/path to profile image
     # website = Column(String(255), nullable=True)
 
     api_key = Column(String(128), unique=True, nullable=False)  # per-user API key
@@ -41,6 +43,7 @@ class User(Base):
 
     company = relationship("Company", back_populates="users")
     documents = relationship("Document", back_populates="uploader")
+    websites = relationship("Website", back_populates="uploader")
 
 class Document(Base):
     __tablename__ = "documents"
@@ -62,4 +65,26 @@ class Document(Base):
 
     __table_args__ = (
         UniqueConstraint("tenant_code", "filename", name="uq_tenant_filename"),
+    )
+
+class Website(Base):
+    __tablename__ = "websites"
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False)
+    uploader_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    tenant_code = Column(String(64), index=True, nullable=False)
+    user_code = Column(String(64), index=True, nullable=False)
+    url = Column(String(2048), nullable=False)  # original URL
+    url_hash = Column(String(64), nullable=False)  # SHA-256 hash of URL for uniqueness
+    title = Column(String(512), nullable=True)  # page title if available
+    num_chunks = Column(Integer, default=0)
+    status = Column(String(32), default="indexed")  # 'indexed'/'error'
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    company = relationship("Company", back_populates="websites")
+    uploader = relationship("User", back_populates="websites")
+
+    __table_args__ = (
+        UniqueConstraint("tenant_code", "url_hash", name="uq_tenant_url_hash"),
     )

@@ -1,7 +1,18 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python -m py_compile:*)"
+      "Bash(python -m py_compile:*)",
+      "Bash(pip install:*)",
+      "Bash(python -c:*)",
+      "Bash(where:*)",
+      "Bash(C:UsersMohakAppDataLocalProgramsPythonPython313python.exe -m pip install -r requirements.txt)",
+      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python313\\python.exe\" -m pip install -r requirements.txt)",
+      "Bash(python3:*)",
+      "Bash(python -m pip install:*)",
+      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.main import app; print(''✓ Application imports successfully'')\")",
+      "Bash(.\\venv\\Scripts\\python.exe -m pip install:*)",
+      "Bash(venv/Scripts/python.exe -m pip install:*)",
+      "Bash(python -m app.db_migration:*)"
     ],
     "deny": [],
     "ask": []

@@ -53,11 +53,19 @@ class UserOut(BaseModel):
     # NEW FIELDS
     email: str
     address: Optional[str] = None
-    contact_number: Optional[str] = None# NEW FIELDS
-    email: str
+    contact_number: Optional[str] = None
+    profile_image: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class UserUpdate(BaseModel):
+    """Schema for updating user profile information."""
+    display_name: Optional[str] = None
+    email: Optional[str] = None
     address: Optional[str] = None
     contact_number: Optional[str] = None
-    # website: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -81,6 +89,27 @@ class DocumentOut(BaseModel):
     id: int
     filename: str
     original_name: str
+    uploader_id: int
+    num_chunks: int
+    status: str
+    created_at: datetime
+    error_message: Optional[str] = None
+    class Config:
+        from_attributes = True
+
+class WebsiteSubmit(BaseModel):
+    url: str
+
+class WebsiteResponse(BaseModel):
+    website_id: int
+    url: str
+    title: str
+    chunks_indexed: int
+
+class WebsiteOut(BaseModel):
+    id: int
+    url: str
+    title: Optional[str]
     uploader_id: int
     num_chunks: int
     status: str

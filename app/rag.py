@@ -234,6 +234,7 @@ def upsert_chunks(tenant_code: str, user_code: str, doc_filename: str, chunks: L
             "metadata": {
                 "tenant_code": tenant_code,
                 "user_code": user_code,
+                "source_type": "document",  # Distinguish from websites
                 "doc": doc_filename,
                 "chunk_index": i,
                 "text": chunk
@@ -261,16 +262,56 @@ def search(tenant_code: str, query: str, top_k: int = 8, filter_user_code: str |
     )
     return res.matches or []
 
+def _clean_answer_text(text: str) -> str:
+    """
+    Clean up answer text by removing unwanted symbols and formatting artifacts.
+    """
+    # Remove excessive newlines (keep max 2 consecutive newlines)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+
+    # Remove weird unicode characters and symbols that might appear
+    text = re.sub(r'[\u200b-\u200d\ufeff]', '', text)  # Zero-width spaces
+
+    # Remove excessive whitespace
+    text = re.sub(r'[ \t]+', ' ', text)
+
+    # Remove markdown artifacts if present (** or __ for bold/italic)
+    # Only if they appear to be formatting errors (unpaired)
+    text = re.sub(r'(?<!\w)\*\*(?!\w)', '', text)
+    text = re.sub(r'(?<!\w)__(?!\w)', '', text)
+
+    # Clean up bullet points and list markers
+    text = re.sub(r'^\s*[-•]\s+', '• ', text, flags=re.MULTILINE)
+
+    # Remove any trailing/leading whitespace
+    text = text.strip()
+
+    return text
+
 def synthesize_answer(question: str, contexts: List[str]) -> str:
+    """
+    Generate a refined answer using the provided contexts.
+    The answer is cleaned to remove unwanted symbols and formatting artifacts.
+    """
     prompt = (
-        "Answer the question ONLY using the provided context. "
+        "You are a helpful assistant that answers questions based on provided context. "
+        "Provide a clear, concise, and well-formatted answer using ONLY the information in the context. "
+        "Do not include unnecessary symbols, formatting artifacts, or markdown unless needed for clarity. "
         "If the answer isn't in the context, say you don't have enough information.\n\n"
-        f"Question:\n{question}\n\n"
+        f"Question: {question}\n\n"
         "Context:\n" + "\n\n---\n".join(contexts[:12])
     )
     chat = oai.chat.completions.create(
         model=CHAT_MODEL,
-        messages=[{"role": "user", "content": prompt}],
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant that provides clear, precise answers without unnecessary formatting symbols."},
+            {"role": "user", "content": prompt}
+        ],
         temperature=0.2,
     )
-    return chat.choices[0].message.content.strip()
+    raw_answer = chat.choices[0].message.content.strip()
+
+    # Clean up the answer
+    cleaned_answer = _clean_answer_text(raw_answer)
+
+    return cleaned_answer
