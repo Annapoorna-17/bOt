@@ -36,7 +36,10 @@ class User(Base):
     profile_image = Column(String(512), nullable=True)  # Stores filename/path to profile image
     # website = Column(String(255), nullable=True)
 
-    api_key = Column(String(128), unique=True, nullable=False)  # per-user API key
+    hashed_password = Column(String(255), nullable=True) # Made nullable for existing users
+
+    # Changed nullable to True. Users registering with a password won't have an API key.
+    api_key = Column(String(128), unique=True, nullable=True)  # per-user API key
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
