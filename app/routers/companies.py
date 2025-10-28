@@ -21,7 +21,13 @@ def create_company(payload: CompanyCreate, db: Session = Depends(get_db)):
     ).first()
     if exists:
         raise HTTPException(status_code=409, detail="tenant_code or slug already exists")
-    c = Company(name=payload.name, tenant_code=payload.tenant_code, slug_url=slug_url)
+    c = Company(name=payload.name,
+        tenant_code=payload.tenant_code,
+        slug_url=slug_url, 
+        email=payload.email,
+        phone=payload.phone,
+        website=payload.website,
+        address=payload.address,)
     db.add(c)
     db.commit()
     db.refresh(c)
