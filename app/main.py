@@ -7,14 +7,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
 
-# ⬇️ import the actual Router objects explicitly
+# Import routers
 from .routers.companies import router as companies_router
 from .routers.users import router as users_router
 from .routers.documents import router as documents_router
+from .routers.websites import router as websites_router
 from .routers.query import router as query_router
-from .routers.tenant import router as tenant_router
-
-from .routers.auth import router as auth_router  # <--- 1. ADD THIS LINE
+from .routers.auth import router as auth_router
 
 from .db import Base, engine
 
@@ -37,14 +36,13 @@ PROFILE_IMAGES_DIR = "profile_images"
 os.makedirs(PROFILE_IMAGES_DIR, exist_ok=True)
 app.mount("/profile-images", StaticFiles(directory=PROFILE_IMAGES_DIR), name="profile-images")
 
-# include routers via the imported symbols
-app.include_router(companies_router)
-app.include_router(users_router)
-app.include_router(documents_router)
-app.include_router(query_router)
-app.include_router(tenant_router)  # New tenant-scoped routes with tenant_code in URL
-
-app.include_router(auth_router)  # <--- 2. ADD THIS LINE
+# Include routers
+app.include_router(auth_router)       # Authentication (login, register, etc.)
+app.include_router(companies_router)  # Superadmin - company management
+app.include_router(users_router)      # User management
+app.include_router(documents_router)  # Document upload/management
+app.include_router(websites_router)   # Website scraping/management
+app.include_router(query_router)      # RAG queries
 
 @app.on_event("startup")
 def _setup():

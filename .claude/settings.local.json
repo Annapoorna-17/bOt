@@ -12,7 +12,11 @@
       "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.main import app; print(''✓ Application imports successfully'')\")",
       "Bash(.\\venv\\Scripts\\python.exe -m pip install:*)",
       "Bash(venv/Scripts/python.exe -m pip install:*)",
-      "Bash(python -m app.db_migration:*)"
+      "Bash(python -m app.db_migration:*)",
+      "Bash(.\\venv\\Scripts\\python.exe:*)",
+      "Bash(pip uninstall:*)",
+      "Bash(timeout:*)",
+      "Bash(exit 0)"
     ],
     "deny": [],
     "ask": []

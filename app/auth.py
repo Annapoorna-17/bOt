@@ -13,7 +13,7 @@
 #     return {1: "Super Admin", 2: "Admin", 3: "User"}.get(role, "Unknown")
 
 import os
-from passlib.context import CryptContext
+import bcrypt
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import JWTError, jwt
@@ -25,20 +25,27 @@ from sqlalchemy.orm import Session
 # You need to import your models, schemas, and db session.
 # Adjust these import paths if they are incorrect for your project.
 from . import models, schemas
-from .db import get_db 
+from .db import get_db
 
 # ----------------------------------------------------
-# 1. YOUR EXISTING PASSWORD HASHING
+# 1. PASSWORD HASHING
 # ----------------------------------------------------
-pwd_ctx = CryptContext(schemes=["bcrypt_sha256"], deprecated="auto")
-
 def hash_password(plain: str) -> str:
-    return pwd_ctx.hash(plain)
+    """Hash a password using bcrypt."""
+    # Convert to bytes and hash
+    password_bytes = plain.encode('utf-8')
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password_bytes, salt)
+    return hashed.decode('utf-8')
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_ctx.verify(plain, hashed)
+    """Verify a password against a bcrypt hash."""
+    password_bytes = plain.encode('utf-8')
+    hashed_bytes = hashed.encode('utf-8')
+    return bcrypt.checkpw(password_bytes, hashed_bytes)
 
 def role_name(role: int) -> str:
+    """Get role name from role ID (legacy function)."""
     return {1: "Super Admin", 2: "Admin", 3: "User"}.get(role, "Unknown")
 # ----------------------------------------------------
 # 2. JWT (TOKEN) CONFIGURATION (SECURE VERSION)

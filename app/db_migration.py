@@ -53,6 +53,27 @@ def add_column_if_missing(table_name: str, column_name: str, column_definition: 
         return False
 
 
+def modify_column_if_needed(table_name: str, column_name: str, new_definition: str):
+    """Modify a column definition if it exists."""
+    existing_cols = get_existing_columns(table_name)
+
+    if column_name not in existing_cols:
+        print(f"[SKIP] Column '{table_name}.{column_name}' does not exist")
+        return False
+
+    try:
+        with engine.connect() as conn:
+            sql = f"ALTER TABLE {table_name} MODIFY COLUMN {column_name} {new_definition}"
+            print(f"Modifying column: {table_name}.{column_name} ...")
+            conn.execute(text(sql))
+            conn.commit()
+            print(f"[OK] Modified column '{table_name}.{column_name}'")
+            return True
+    except Exception as e:
+        print(f"[ERROR] Failed to modify column '{table_name}.{column_name}': {e}")
+        return False
+
+
 def migrate_database():
     """Run all migrations to bring database schema up to date."""
     print("=" * 60)
@@ -94,6 +115,14 @@ def migrate_database():
         migrations_applied += 1
 
     if add_column_if_missing("users", "profile_image", "VARCHAR(512) NULL"):
+        migrations_applied += 1
+
+    if add_column_if_missing("users", "hashed_password", "VARCHAR(255) NULL"):
+        migrations_applied += 1
+
+    # Migration 3: Make api_key nullable (for JWT users who don't have API keys)
+    print("\n[3] Ensuring api_key is nullable for JWT users...")
+    if modify_column_if_needed("users", "api_key", "VARCHAR(128) NULL"):
         migrations_applied += 1
 
     # Future migrations can be added here
