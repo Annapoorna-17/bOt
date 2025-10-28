@@ -4,6 +4,8 @@ load_dotenv()  # ensure .env is loaded before other imports
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+import os
 
 # ⬇️ import the actual Router objects explicitly
 from .routers.companies import router as companies_router
@@ -30,6 +32,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Mount static files for profile images
+PROFILE_IMAGES_DIR = "profile_images"
+os.makedirs(PROFILE_IMAGES_DIR, exist_ok=True)
+app.mount("/profile-images", StaticFiles(directory=PROFILE_IMAGES_DIR), name="profile-images")
+
 # include routers via the imported symbols
 app.include_router(companies_router)
 app.include_router(users_router)
@@ -41,7 +48,21 @@ app.include_router(auth_router)  # <--- 2. ADD THIS LINE
 
 @app.on_event("startup")
 def _setup():
+    """
+    Initialize database on startup.
+    1. Create tables if they don't exist
+    2. Run migrations to add any new columns to existing tables
+    """
+    # Create new tables
     Base.metadata.create_all(bind=engine)
+
+    # Run migrations to add missing columns
+    try:
+        from .db_migration import migrate_database
+        migrate_database()
+    except Exception as e:
+        print(f"Warning: Database migration failed: {e}")
+        print("Some features may not work if database schema is outdated")
 
 @app.get("/healthz")
 def health():
