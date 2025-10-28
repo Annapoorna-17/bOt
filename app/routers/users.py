@@ -29,6 +29,10 @@ def create_user(
         user_code=payload.user_code,
         role=payload.role,
         api_key=api_key,
+         # ✅ New fields
+        email=payload.email,
+        address=payload.address,
+        contact_number=payload.contact_number,
     )
     db.add(u)
     db.commit()

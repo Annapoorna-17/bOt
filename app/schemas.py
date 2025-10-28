@@ -6,14 +6,30 @@ class CompanyCreate(BaseModel):
     name: str
     tenant_code: str
     slug_url: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    website: Optional[str] = None
+    address: Optional[str] = None
 
 class CompanyOut(BaseModel):
     id: int
     name: str
     tenant_code: str
     slug_url: str
+
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    # website: Optional[str] = None
+    address: Optional[str] = None
+
     class Config:
         from_attributes = True
+
+class UserBase(BaseModel):
+    display_name: str
+    user_code: str
+    role: str = Field(pattern="^(admin|user)$")
+
 
 class UserCreate(BaseModel):
     tenant_code: str
@@ -21,14 +37,31 @@ class UserCreate(BaseModel):
     user_code: str
     role: str = Field(pattern="^(admin|user)$")
 
+     # NEW FIELDS
+    email: str
+    address: Optional[str] = None
+    contact_number: Optional[str] = None
+    # website: Optional[str] = None
+
 class UserOut(BaseModel):
     id: int
     display_name: str
     user_code: str
     role: str
     api_key: str
+
+    # NEW FIELDS
+    email: str
+    address: Optional[str] = None
+    contact_number: Optional[str] = None# NEW FIELDS
+    email: str
+    address: Optional[str] = None
+    contact_number: Optional[str] = None
+    # website: Optional[str] = None
+
     class Config:
         from_attributes = True
+
 
 class UploadResponse(BaseModel):
     document_id: int

@@ -9,6 +9,12 @@ class Company(Base):
     name = Column(String(255), nullable=False)
     tenant_code = Column(String(64), unique=True, index=True, nullable=False)  # e.g., qwert
     slug_url = Column(String(255), unique=True, nullable=False)  # e.g., https://service.com/qwert
+
+    email = Column(String(255), nullable=True)
+    phone = Column(String(50), nullable=True)
+    website = Column(String(255), nullable=True)
+    address = Column(String(255), nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
     users = relationship("User", back_populates="company")
@@ -21,9 +27,17 @@ class User(Base):
     display_name = Column(String(255), nullable=False)
     user_code = Column(String(64), unique=True, index=True, nullable=False)  # e.g., qwert-uds1
     role = Column(String(32), nullable=False)  # "admin" or "user"
+
+     # NEW FIELDS
+    email = Column(String(255), unique=True, nullable=False)
+    address = Column(Text, nullable=True)
+    contact_number = Column(String(20), nullable=True)
+    # website = Column(String(255), nullable=True)
+
     api_key = Column(String(128), unique=True, nullable=False)  # per-user API key
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
 
     company = relationship("Company", back_populates="users")
     documents = relationship("Document", back_populates="uploader")
