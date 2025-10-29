@@ -174,10 +174,13 @@ def request_password_reset(
     In a real app, this would email them a token.
     """
     user = db.query(models.User).filter(models.User.email == request.email).first()
-    
-    # Don't reveal if the user exists or not for security.
+
+    # Throw error if email doesn't exist
     if not user:
-        return {"msg": "If an account with this email exists, a reset link has been sent."}
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No account found with this email address."
+        )
 
     # Create a special, short-lived token for password reset
     reset_token_expires = timedelta(minutes=15) # 15 minutes
