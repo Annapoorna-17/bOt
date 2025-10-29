@@ -20,7 +20,7 @@ from secrets import token_urlsafe
 from PIL import Image
 from ..db import get_db
 from ..models import Document, User, Website
-from ..security import require_caller_with_tenant_in_path, require_admin_with_tenant_in_path, Caller
+from ..security import require_caller_with_tenant_in_path, require_admin_with_tenant_in_path, SUPERADMIN_SYSTEM_TENANT, Caller
 from ..schemas import (
     UploadResponse, DocumentOut, QueryRequest, QueryAnswer,
     UserCreate, UserOut, UserUpdate, WebsiteSubmit, WebsiteResponse, WebsiteOut
@@ -120,7 +120,7 @@ def list_documents_tenant(
 
     query = db.query(Document).filter(Document.company_id == caller.tenant.id)
 
-    if my_docs_only or caller.user.role != "admin":
+    if my_docs_only or caller.user.role not in ["admin", "superadmin"]:
         query = query.filter(Document.uploader_id == caller.user.id)
 
     return query.order_by(Document.created_at.desc()).all()
@@ -147,7 +147,7 @@ def delete_document_tenant(
             detail="Access denied: This document belongs to a different tenant"
         )
 
-    if doc.uploader_id != caller.user.id and caller.user.role != "admin":
+    if doc.uploader_id != caller.user.id and caller.user.role not in ["admin", "superadmin"]:
         raise HTTPException(
             status_code=403,
             detail="Access denied: You can only delete your own documents unless you are an admin"
@@ -246,7 +246,7 @@ def list_websites_tenant(
 
     query = db.query(Website).filter(Website.company_id == caller.tenant.id)
 
-    if my_websites_only or caller.user.role != "admin":
+    if my_websites_only or caller.user.role not in ["admin", "superadmin"]:
         query = query.filter(Website.uploader_id == caller.user.id)
 
     return query.order_by(Website.created_at.desc()).all()
@@ -273,7 +273,7 @@ def delete_website_tenant(
             detail="Access denied: This website belongs to a different tenant"
         )
 
-    if website.uploader_id != caller.user.id and caller.user.role != "admin":
+    if website.uploader_id != caller.user.id and caller.user.role not in ["admin", "superadmin"]:
         raise HTTPException(
             status_code=403,
             detail="Access denied: You can only delete your own websites unless you are an admin"
@@ -348,6 +348,13 @@ def create_user_tenant(
     db: Session = Depends(get_db),
 ):
     """Create a new user for the specified tenant. Admin only."""
+    # Prevent creating users in the reserved superadmin tenant
+    if tenant_code.upper() == SUPERADMIN_SYSTEM_TENANT.upper():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot create users in the reserved tenant '{SUPERADMIN_SYSTEM_TENANT}'. Use POST /superadmin/companies/superadmin to create superadmin users."
+        )
+
     caller = require_admin_with_tenant_in_path(tenant_code, x_user_code, x_api_key, db)
 
     if caller.tenant.tenant_code != payload.tenant_code:

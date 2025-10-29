@@ -8,6 +8,7 @@ from datetime import timedelta
 # (Adjust paths if your structure is different)
 from .. import schemas, models, auth
 from ..db import get_db
+from ..security import SUPERADMIN_SYSTEM_TENANT
 
 router = APIRouter(
     prefix="/auth",  # All routes in this file will start with /auth
@@ -22,6 +23,13 @@ def register_user(user_data: schemas.UserCreate, db: Session = Depends(get_db)):
     """
     Register a new user.
     """
+    # Prevent registering users in the reserved superadmin tenant
+    if user_data.tenant_code.upper() == SUPERADMIN_SYSTEM_TENANT.upper():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot register users in the reserved tenant '{SUPERADMIN_SYSTEM_TENANT}'. Use POST /superadmin/companies/superadmin to create superadmin users."
+        )
+
     # Check if user already exists
     db_user = db.query(models.User).filter(models.User.email == user_data.email).first()
     if db_user:
@@ -29,7 +37,7 @@ def register_user(user_data: schemas.UserCreate, db: Session = Depends(get_db)):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
         )
-    
+
     # Check if tenant exists
     company = db.query(models.Company).filter(models.Company.tenant_code == user_data.tenant_code).first()
     if not company:

@@ -101,7 +101,7 @@ def list_documents(
     query = db.query(Document).filter(Document.company_id == current_user.company_id) # <-- Changed
 
     # If user wants only their documents or if they're not an admin
-    if my_docs_only or current_user.role != "admin": # <-- Changed
+    if my_docs_only or current_user.role not in ["admin", "superadmin"]: # <-- Changed
         query = query.filter(Document.uploader_id == current_user.id) # <-- Changed
 
     return query.order_by(Document.created_at.desc()).all()
@@ -130,7 +130,7 @@ def delete_document(
         )
 
     # Check authorization: owner or admin can delete
-    if doc.uploader_id != current_user.id and current_user.role != "admin": # <-- Changed
+    if doc.uploader_id != current_user.id and current_user.role not in ["admin", "superadmin"]: # <-- Changed
         raise HTTPException(
             status_code=403,
             detail="Access denied: You can only delete your own documents unless you are an admin"

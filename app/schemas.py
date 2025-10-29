@@ -28,7 +28,7 @@ class CompanyOut(BaseModel):
 class UserBase(BaseModel):
     display_name: str
     user_code: str
-    role: str = Field(pattern="^(admin|user)$")
+    role: str = Field(pattern="^(superadmin|admin|user)$")
 
     # --- FIELD ADDED ---
     # Added email to base, as it's common
@@ -39,7 +39,7 @@ class UserCreate(BaseModel):
     tenant_code: str
     display_name: str
     user_code: str
-    role: str = Field(pattern="^(admin|user)$")
+    role: str = Field(pattern="^(superadmin|admin|user)$")
 
      # NEW FIELDS
     email: EmailStr  # <--- 2. CHANGED to EmailStr for consistency
@@ -101,6 +101,15 @@ class PasswordResetRequest(BaseModel):
 class PasswordResetConfirm(BaseModel):
     """Schema for confirming the password reset."""
     new_password: str
+
+class SuperadminCreate(BaseModel):
+    """Schema for creating a superadmin user. Does not require tenant_code as it uses a reserved system tenant."""
+    display_name: str
+    user_code: str
+    email: EmailStr
+    password: str
+    address: Optional[str] = None
+    contact_number: Optional[str] = None
 
 # --- END OF NEW SCHEMAS ---
 

@@ -95,7 +95,7 @@ def list_websites(
     """
     query = db.query(Website).filter(Website.company_id == current_user.company_id)
 
-    if my_websites_only or current_user.role != "admin":
+    if my_websites_only or current_user.role not in ["admin", "superadmin"]:
         query = query.filter(Website.uploader_id == current_user.id)
 
     return query.order_by(Website.created_at.desc()).all()
@@ -127,7 +127,7 @@ def delete_website(
         )
 
     # Check authorization: owner or admin can delete
-    if website.uploader_id != current_user.id and current_user.role != "admin":
+    if website.uploader_id != current_user.id and current_user.role not in ["admin", "superadmin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied: You can only delete your own websites unless you are an admin"

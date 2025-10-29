@@ -11,6 +11,7 @@ from ..db import get_db
 from ..models import User
 from ..schemas import UserCreate, UserOut, UserUpdate
 from ..auth import get_current_user, hash_password
+from ..security import SUPERADMIN_SYSTEM_TENANT
 from .. import models
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -38,11 +39,18 @@ def create_user(
     Create a new user. Only admins can do this.
     Requires: Bearer token authentication
     """
-    # Check if current user is an admin
-    if current_user.role != "admin":
+    # Check if current user is an admin or superadmin
+    if current_user.role not in ["admin", "superadmin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can create users"
+        )
+
+    # Prevent creating users in the reserved superadmin tenant
+    if payload.tenant_code.upper() == SUPERADMIN_SYSTEM_TENANT.upper():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot create users in the reserved tenant '{SUPERADMIN_SYSTEM_TENANT}'. Use POST /superadmin/companies/superadmin to create superadmin users."
         )
 
     # Verify tenant matches

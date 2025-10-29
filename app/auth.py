@@ -97,45 +97,53 @@ def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None):
 # 4. NEW: SECURITY DEPENDENCY
 # ----------------------------------------------------
 
-def get_current_user(
-    token: str = Depends(oauth2_scheme), 
-    db: Session = Depends(get_db)
-) -> models.User:
+def validate_jwt_and_get_user(token: str, db: Session) -> models.User:
     """
-    This is the dependency you will add to your protected endpoints.
-    It decodes the token, validates it, and fetches the user from the DB.
+    Helper function to validate JWT token and return user.
+    This can be called directly without dependency injection.
+    Raises HTTPException if validation fails.
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        
+
         # Check if it's an access token
         if payload.get("type") != "access":
             raise credentials_exception
-            
+
         email: str = payload.get("sub")
         if email is None:
             raise credentials_exception
-        
+
         # We use the TokenData schema we defined in schemas.py
         token_data = schemas.TokenData(sub=email, type="access")
-    
+
     except JWTError:
         # This catches expired tokens, invalid signatures, etc.
         raise credentials_exception
-    
+
     # Get the user from the database
     user = db.query(models.User).filter(models.User.email == token_data.sub).first()
-    
+
     if user is None:
         raise credentials_exception
-    
+
     if not user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
-        
+
     return user
+
+def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+) -> models.User:
+    """
+    This is the dependency you will add to your protected endpoints.
+    It decodes the token, validates it, and fetches the user from the DB.
+    """
+    return validate_jwt_and_get_user(token, db)

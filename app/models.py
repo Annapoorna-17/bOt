@@ -27,7 +27,7 @@ class User(Base):
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=False)
     display_name = Column(String(255), nullable=False)
     user_code = Column(String(64), unique=True, index=True, nullable=False)  # e.g., qwert-uds1
-    role = Column(String(32), nullable=False)  # "admin" or "user"
+    role = Column(String(32), nullable=False)  # "superadmin", "admin", or "user"
 
      # NEW FIELDS
     email = Column(String(255), unique=True, nullable=False)
