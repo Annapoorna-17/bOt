@@ -107,7 +107,25 @@ def list_users(
     users = db.query(User).filter(
         User.company_id == current_user.company_id
     ).order_by(User.created_at.desc()).all()
-    return users
+
+    # Add company_name to each user
+    result = []
+    for user in users:
+        user_dict = {
+            "id": user.id,
+            "display_name": user.display_name,
+            "user_code": user.user_code,
+            "role": user.role,
+            "api_key": user.api_key,
+            "email": user.email,
+            "address": user.address,
+            "contact_number": user.contact_number,
+            "profile_image": user.profile_image,
+            "company_name": user.company.name if user.company else None
+        }
+        result.append(user_dict)
+
+    return result
 
 
 @router.get("/me", response_model=UserOut)

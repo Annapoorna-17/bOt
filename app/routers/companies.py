@@ -61,6 +61,34 @@ def list_companies(db: Session = Depends(get_db)):
     return companies
 
 
+@router.get("/admins", response_model=list[UserOut], dependencies=[Depends(require_superadmin)])
+def list_all_company_admins(db: Session = Depends(get_db)):
+    """
+    List all admin users across all companies with their company names.
+    Superadmin only.
+    """
+    admins = db.query(User).filter(User.role.in_(["admin", "superadmin"])).order_by(User.created_at.desc()).all()
+
+    # Add company_name to each admin
+    result = []
+    for admin in admins:
+        admin_dict = {
+            "id": admin.id,
+            "display_name": admin.display_name,
+            "user_code": admin.user_code,
+            "role": admin.role,
+            "api_key": admin.api_key,
+            "email": admin.email,
+            "address": admin.address,
+            "contact_number": admin.contact_number,
+            "profile_image": admin.profile_image,
+            "company_name": admin.company.name if admin.company else None
+        }
+        result.append(admin_dict)
+
+    return result
+
+
 @router.post("/{tenant_code}/admin", response_model=UserOut, dependencies=[Depends(require_superadmin)])
 def create_first_admin(
     tenant_code: str,

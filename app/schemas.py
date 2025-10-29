@@ -56,7 +56,7 @@ class UserOut(BaseModel):
     display_name: str
     user_code: str
     role: str
-    
+
     # --- FIELD MODIFIED FOR AUTH ---
     # Made api_key optional, as password-users might not have one
     api_key: Optional[str] = None
@@ -66,6 +66,7 @@ class UserOut(BaseModel):
     address: Optional[str] = None
     contact_number: Optional[str] = None
     profile_image: Optional[str] = None
+    company_name: Optional[str] = None  # Added for list users response
 
     class Config:
         from_attributes = True
@@ -133,6 +134,7 @@ class DocumentOut(BaseModel):
     filename: str
     original_name: str
     uploader_id: int
+    user_code: str  # Added user_code field
     num_chunks: int
     status: str
     created_at: datetime
@@ -154,6 +156,7 @@ class WebsiteOut(BaseModel):
     url: str
     title: Optional[str]
     uploader_id: int
+    user_code: str  # Added user_code field
     num_chunks: int
     status: str
     created_at: datetime

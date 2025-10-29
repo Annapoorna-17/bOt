@@ -337,7 +337,25 @@ def list_users_tenant(
     caller = require_caller_with_tenant_in_path(tenant_code, x_user_code, x_api_key, db)
 
     users = db.query(User).filter(User.company_id == caller.tenant.id).order_by(User.created_at.desc()).all()
-    return users
+
+    # Add company_name to each user
+    result = []
+    for user in users:
+        user_dict = {
+            "id": user.id,
+            "display_name": user.display_name,
+            "user_code": user.user_code,
+            "role": user.role,
+            "api_key": user.api_key,
+            "email": user.email,
+            "address": user.address,
+            "contact_number": user.contact_number,
+            "profile_image": user.profile_image,
+            "company_name": user.company.name if user.company else None
+        }
+        result.append(user_dict)
+
+    return result
 
 @router.post("/{tenant_code}/users", response_model=UserOut)
 def create_user_tenant(
