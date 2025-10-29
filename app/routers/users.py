@@ -117,7 +117,8 @@ def list_users(
             "user_code": user.user_code,
             "role": user.role,
             "api_key": user.api_key,
-            "email": user.email,
+            # Convert empty string to None for proper validation
+            "email": user.email if user.email else None,
             "address": user.address,
             "contact_number": user.contact_number,
             "profile_image": user.profile_image,

@@ -78,7 +78,8 @@ def list_all_company_admins(db: Session = Depends(get_db)):
             "user_code": admin.user_code,
             "role": admin.role,
             "api_key": admin.api_key,
-            "email": admin.email,
+            # Convert empty string to None for proper validation
+            "email": admin.email if admin.email else None,
             "address": admin.address,
             "contact_number": admin.contact_number,
             "profile_image": admin.profile_image,

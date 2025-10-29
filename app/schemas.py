@@ -62,7 +62,8 @@ class UserOut(BaseModel):
     api_key: Optional[str] = None
 
     # NEW FIELDS
-    email: EmailStr
+    # Made email optional to handle older records with empty/null email values
+    email: Optional[EmailStr] = None
     address: Optional[str] = None
     contact_number: Optional[str] = None
     profile_image: Optional[str] = None
