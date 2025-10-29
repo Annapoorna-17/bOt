@@ -15,6 +15,7 @@ import hashlib
 import io
 from typing import List
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Header
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from secrets import token_urlsafe
 from PIL import Image
@@ -194,21 +195,7 @@ async def scrape_website_tenant(
             detail="This website has already been scraped by your tenant. Delete the old entry first if you want to re-scrape."
         )
 
-    # Create website record
-    website = Website(
-        company_id=caller.tenant.id,
-        uploader_id=caller.user.id,
-        tenant_code=caller.tenant.tenant_code,
-        user_code=caller.user.user_code,
-        url=payload.url,
-        url_hash=url_hash,
-        status="indexed",
-    )
-    db.add(website)
-    db.commit()
-    db.refresh(website)
-
-    # Scrape and index (now async with concurrent image processing)
+    # Scrape and index FIRST to validate the URL (now async with concurrent image processing)
     try:
         title, chunks = await scrape_and_index_website(
             url=payload.url,
@@ -217,14 +204,25 @@ async def scrape_website_tenant(
             max_images=10,  # Process up to 10 images
             max_concurrent_images=3  # Process 3 images at a time
         )
-        website.title = title
-        website.num_chunks = chunks
-        db.commit()
     except Exception as e:
-        website.status = "error"
-        website.error_message = str(e)
-        db.commit()
-        raise HTTPException(status_code=500, detail=f"Scraping/indexing failed: {e}")
+        # URL is invalid or scraping failed - don't save to database
+        raise HTTPException(status_code=400, detail=f"Scraping failed: {e}")
+
+    # Only create website record if scraping succeeded
+    website = Website(
+        company_id=caller.tenant.id,
+        uploader_id=caller.user.id,
+        tenant_code=caller.tenant.tenant_code,
+        user_code=caller.user.user_code,
+        url=payload.url,
+        url_hash=url_hash,
+        title=title,
+        num_chunks=chunks,
+        status="indexed",
+    )
+    db.add(website)
+    db.commit()
+    db.refresh(website)
 
     return WebsiteResponse(
         website_id=website.id,
@@ -554,6 +552,56 @@ def upload_profile_image_tenant(
     db.refresh(user)
 
     return user
+
+
+@router.get("/{tenant_code}/users/me/profile-image")
+def get_profile_image_tenant(
+    tenant_code: str,
+    x_user_code: str = Header(..., alias="X-User-Code"),
+    x_api_key: str = Header(..., alias="X-API-Key"),
+    db: Session = Depends(get_db),
+):
+    """
+    Get the current user's profile image.
+    Returns the image file with proper content type headers.
+
+    This endpoint provides the same functionality as the static file endpoint
+    but with authentication and returns the actual image file.
+    """
+    caller = require_caller_with_tenant_in_path(tenant_code, x_user_code, x_api_key, db)
+    user = caller.user
+
+    if not user.profile_image:
+        raise HTTPException(status_code=404, detail="No profile image found")
+
+    # Build file path
+    filepath = os.path.join(PROFILE_IMAGES_DIR, user.profile_image)
+
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="Profile image file not found on server")
+
+    # Determine media type from file extension
+    file_ext = os.path.splitext(user.profile_image)[1].lower()
+    media_type_map = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".gif": "image/gif",
+        ".webp": "image/webp"
+    }
+    media_type = media_type_map.get(file_ext, "application/octet-stream")
+
+    # Return the file with metadata in headers
+    return FileResponse(
+        path=filepath,
+        media_type=media_type,
+        filename=user.profile_image,
+        headers={
+            "X-User-Code": user.user_code,
+            "X-Display-Name": user.display_name,
+            "X-Profile-Image-Filename": user.profile_image
+        }
+    )
 
 
 @router.delete("/{tenant_code}/users/me/profile-image", response_model=UserOut)

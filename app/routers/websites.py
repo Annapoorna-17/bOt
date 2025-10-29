@@ -39,21 +39,7 @@ async def scrape_website(
             detail="This website has already been scraped by your tenant. Delete the old entry first if you want to re-scrape."
         )
 
-    # Create website record
-    website = Website(
-        company_id=current_user.company_id,
-        uploader_id=current_user.id,
-        tenant_code=current_user.company.tenant_code,
-        user_code=current_user.user_code,
-        url=payload.url,
-        url_hash=url_hash,
-        status="indexed",
-    )
-    db.add(website)
-    db.commit()
-    db.refresh(website)
-
-    # Scrape and index (async with concurrent image processing)
+    # Scrape and index FIRST to validate the URL (async with concurrent image processing)
     try:
         title, chunks = await scrape_and_index_website(
             url=payload.url,
@@ -62,17 +48,28 @@ async def scrape_website(
             max_images=10,  # Process up to 10 images
             max_concurrent_images=3  # Process 3 images at a time
         )
-        website.title = title
-        website.num_chunks = chunks
-        db.commit()
     except Exception as e:
-        website.status = "error"
-        website.error_message = str(e)
-        db.commit()
+        # URL is invalid or scraping failed - don't save to database
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Scraping/indexing failed: {e}"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Scraping failed: {e}"
         )
+
+    # Only create website record if scraping succeeded
+    website = Website(
+        company_id=current_user.company_id,
+        uploader_id=current_user.id,
+        tenant_code=current_user.company.tenant_code,
+        user_code=current_user.user_code,
+        url=payload.url,
+        url_hash=url_hash,
+        title=title,
+        num_chunks=chunks,
+        status="indexed",
+    )
+    db.add(website)
+    db.commit()
+    db.refresh(website)
 
     return WebsiteResponse(
         website_id=website.id,

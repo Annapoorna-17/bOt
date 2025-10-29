@@ -470,6 +470,7 @@ def search(tenant_code: str, query: str, top_k: int = 8, filter_user_code: str |
 def _clean_answer_text(text: str) -> str:
     """
     Clean up answer text by removing unwanted symbols and formatting artifacts.
+    Enhanced for chatbot-friendly responses with better list handling.
     """
     # Remove excessive newlines (keep max 2 consecutive newlines)
     text = re.sub(r'\n{3,}', '\n\n', text)
@@ -480,13 +481,43 @@ def _clean_answer_text(text: str) -> str:
     # Remove excessive whitespace
     text = re.sub(r'[ \t]+', ' ', text)
 
-    # Remove markdown artifacts if present (** or __ for bold/italic)
-    # Only if they appear to be formatting errors (unpaired)
-    text = re.sub(r'(?<!\w)\*\*(?!\w)', '', text)
-    text = re.sub(r'(?<!\w)__(?!\w)', '', text)
+    # Remove markdown formatting symbols (bold, italic, code)
+    # Remove ** for bold
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+    # Remove __ for bold
+    text = re.sub(r'__(.+?)__', r'\1', text)
+    # Remove * for italic
+    text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'\1', text)
+    # Remove _ for italic (but not in words)
+    text = re.sub(r'(?<!\w)_(?!_)(.+?)(?<!_)_(?!\w)', r'\1', text)
+    # Remove backticks for code
+    text = re.sub(r'`([^`]+)`', r'\1', text)
+    # Remove ~~strikethrough~~
+    text = re.sub(r'~~(.+?)~~', r'\1', text)
 
-    # Clean up bullet points and list markers
-    text = re.sub(r'^\s*[-•]\s+', '• ', text, flags=re.MULTILINE)
+    # Remove markdown headers (##, ###, etc.)
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+
+    # Clean up bullet points and list markers - standardize to •
+    text = re.sub(r'^\s*[-*+]\s+', '• ', text, flags=re.MULTILINE)
+    text = re.sub(r'^\s*[•●○◦]\s+', '• ', text, flags=re.MULTILINE)
+
+    # Clean up numbered lists - ensure proper format (number followed by period and space)
+    text = re.sub(r'^\s*(\d+)[.)]\s+', r'\1. ', text, flags=re.MULTILINE)
+
+    # Remove excessive spaces before punctuation
+    text = re.sub(r'\s+([.,;:!?])', r'\1', text)
+
+    # Remove brackets around citations like [1], [2], etc.
+    text = re.sub(r'\[\d+\]', '', text)
+
+    # Remove HTML-like tags if present
+    text = re.sub(r'<[^>]+>', '', text)
+
+    # Clean up phrases that sound too formal for a chat
+    text = re.sub(r'^Based on the (provided )?context(,| provided)?\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'^According to the (provided )?context(,| provided)?\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'^From the context(,| provided)?\s*', '', text, flags=re.IGNORECASE)
 
     # Remove any trailing/leading whitespace
     text = text.strip()
@@ -497,20 +528,51 @@ def synthesize_answer(question: str, contexts: List[str]) -> str:
     """
     Generate a refined answer using the provided contexts.
     The answer is cleaned to remove unwanted symbols and formatting artifacts.
+    Enhanced with chatbot-friendly formatting instructions.
     """
-    prompt = (
-        "You are a helpful assistant that answers questions based on provided context. "
-        "Provide a clear, concise, and well-formatted answer using ONLY the information in the context. "
-        "Do not include unnecessary symbols, formatting artifacts, or markdown unless needed for clarity. "
-        "If the answer isn't in the context, say you don't have enough information.\n\n"
+    # Enhanced system prompt for chatbot-friendly responses
+    system_prompt = """You are a professional AI assistant in a chatbot interface. Your responses must be:
+
+FORMATTING RULES:
+1. Use natural, conversational language suitable for chat
+2. Never use markdown symbols like **, __, ~~, or ` unless absolutely necessary
+3. Avoid unnecessary special characters, emojis, or decorative symbols
+4. Keep responses clean and easy to read in a chat window
+5. Use proper sentence structure with correct punctuation
+
+WHEN LISTS ARE EXPECTED:
+- If the question asks for a list (e.g., "list all", "what are the", "give me the"), format as a clear numbered or bulleted list
+- Use simple bullet points (•) or numbers (1., 2., 3.)
+- Each item should be on a new line
+- Keep list items concise and scannable
+- Example format:
+  • Item one
+  • Item two
+  • Item three
+
+RESPONSE STYLE:
+- Be direct and precise
+- Avoid verbose introductions like "Based on the context provided..."
+- If information is missing, politely say "I don't have that information"
+- Never make up information beyond what's in the context
+- For factual questions, give factual answers
+- For list questions, give list answers
+
+Remember: You are chatting with a user, not writing a formal document."""
+
+    user_prompt = (
         f"Question: {question}\n\n"
-        "Context:\n" + "\n\n---\n".join(contexts[:12])
+        "Context:\n" + "\n\n---\n".join(contexts[:12]) + "\n\n"
+        "Provide a clear, natural answer based ONLY on the information in the context above. "
+        "If the question expects a list, format your response as a list. "
+        "Keep your response clean and chatbot-friendly."
     )
+
     chat = oai.chat.completions.create(
         model=CHAT_MODEL,
         messages=[
-            {"role": "system", "content": "You are a helpful assistant that provides clear, precise answers without unnecessary formatting symbols."},
-            {"role": "user", "content": prompt}
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
         ],
         temperature=0.2,
     )

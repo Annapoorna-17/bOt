@@ -3,6 +3,7 @@ import os
 import uuid
 import io
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import List
 from PIL import Image
@@ -171,6 +172,57 @@ def update_profile(
     db.commit()
     db.refresh(current_user)
     return current_user
+
+
+@router.get("/me/image")
+def get_profile_image(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get your profile image.
+    Returns the image file with proper content type headers.
+
+    This endpoint provides the same functionality as the static file endpoint
+    but with authentication and returns the actual image file.
+    """
+    if not current_user.profile_image:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No profile image found"
+        )
+
+    # Build file path
+    filepath = os.path.join(PROFILE_IMAGES_DIR, current_user.profile_image)
+
+    if not os.path.exists(filepath):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Profile image file not found on server"
+        )
+
+    # Determine media type from file extension
+    file_ext = os.path.splitext(current_user.profile_image)[1].lower()
+    media_type_map = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".gif": "image/gif",
+        ".webp": "image/webp"
+    }
+    media_type = media_type_map.get(file_ext, "application/octet-stream")
+
+    # Return the file with metadata in headers
+    return FileResponse(
+        path=filepath,
+        media_type=media_type,
+        filename=current_user.profile_image,
+        headers={
+            "X-User-Code": current_user.user_code,
+            "X-Display-Name": current_user.display_name,
+            "X-Profile-Image-Filename": current_user.profile_image
+        }
+    )
 
 
 @router.post("/me/image", response_model=UserOut)
