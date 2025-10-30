@@ -5,6 +5,7 @@ This script checks for missing columns and adds them automatically.
 Run this before starting the app if you've added new model fields.
 """
 import os
+from urllib.parse import quote_plus
 from sqlalchemy import create_engine, inspect, text
 from dotenv import load_dotenv
 
@@ -14,11 +15,11 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     DB_USER = os.getenv("DB_USER", "root")
-    DB_PASSWORD = os.getenv("DB_PASSWORD", "")
+    DB_PASSWORD = os.getenv("DB_PASSWORD", "") 
     DB_HOST = os.getenv("DB_HOST", "localhost")
     DB_PORT = os.getenv("DB_PORT", "3306")
-    DB_NAME = os.getenv("DB_NAME", "rag_db")
-    DATABASE_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    DB_NAME = os.getenv("DB_NAME", "bott")
+    DATABASE_URL = f"mysql+pymysql://{DB_USER}:{quote_plus(DB_PASSWORD)}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 engine = create_engine(DATABASE_URL)
 
@@ -96,6 +97,14 @@ def migrate_database():
 
     if add_column_if_missing("companies", "address", "VARCHAR(255) NULL"):
         migrations_applied += 1
+    # --- NEW FIELDS FOR COMPANY ---
+    if add_column_if_missing("companies", "city", "VARCHAR(100) NULL"):
+        migrations_applied += 1
+    if add_column_if_missing("companies", "state", "VARCHAR(100) NULL"):
+        migrations_applied += 1
+    if add_column_if_missing("companies", "country", "VARCHAR(100) NULL"):
+        migrations_applied += 1
+    # --- END NEW FIELDS ---
 
     if add_column_if_missing("companies", "widget_key", "VARCHAR(128) NULL UNIQUE"):
         migrations_applied += 1
@@ -111,7 +120,18 @@ def migrate_database():
         print("  [WARNING] NOTE: You need to update existing users with valid emails!")
         print("  [WARNING] Then run: ALTER TABLE users ADD UNIQUE INDEX idx_users_email (email);")
 
+    if add_column_if_missing("users", "firstname", "VARCHAR(100) NULL"):
+        migrations_applied += 1
+    if add_column_if_missing("users", "lastname", "VARCHAR(100) NULL"):
+        migrations_applied += 1    
+
     if add_column_if_missing("users", "address", "TEXT NULL"):
+        migrations_applied += 1
+    if add_column_if_missing("users", "city", "VARCHAR(100) NULL"):
+        migrations_applied += 1
+    if add_column_if_missing("users", "state", "VARCHAR(100) NULL"):
+        migrations_applied += 1
+    if add_column_if_missing("users", "country", "VARCHAR(100) NULL"):
         migrations_applied += 1
 
     if add_column_if_missing("users", "contact_number", "VARCHAR(20) NULL"):
