@@ -346,11 +346,17 @@ def list_users_tenant(
             "role": user.role,
             "api_key": user.api_key,
             # Convert empty string to None for proper validation
+            "firstname": user.firstname,
+            "lastname": user.lastname,
             "email": user.email if user.email else None,
-            "address": user.address,
             "contact_number": user.contact_number,
             "profile_image": user.profile_image,
             "company_name": user.company.name if user.company else None
+            
+            "address": user.address,
+            "city": user.city,
+            "state": user.state,
+            "country": user.country
         }
         result.append(user_dict)
 
@@ -387,9 +393,15 @@ def create_user_tenant(
         user_code=payload.user_code,
         role=payload.role,
         api_key=api_key,
+        firstname=payload.firstname,
+        lastname=payload.lastname,
         email=payload.email,
-        address=payload.address,
         contact_number=payload.contact_number,
+        
+        address=payload.address,
+        city=payload.city,
+        state=payload.state,
+        country=payload.country
     )
     db.add(u)
     db.commit()
@@ -432,12 +444,24 @@ def update_current_user_tenant(
     # Update fields if provided
     if payload.display_name is not None:
         user.display_name = payload.display_name
+    if payload.firstname is not None:
+        user.firstname = payload.firstname
+    if payload.lastname is not None:
+        user.lastname = payload.lastname
     if payload.email is not None:
         user.email = payload.email
-    if payload.address is not None:
-        user.address = payload.address
+    
     if payload.contact_number is not None:
         user.contact_number = payload.contact_number
+    
+    if payload.address is not None:
+        user.address = payload.address
+    if payload.city is not None:
+        user.city = payload.city
+    if payload.state is not None:
+        user.state = payload.state
+    if payload.country is not None:
+        user.country = payload.country
 
     db.commit()
     db.refresh(user)

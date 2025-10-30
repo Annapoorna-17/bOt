@@ -45,6 +45,9 @@ def create_company(payload: CompanyCreate, db: Session = Depends(get_db)):
         phone=payload.phone,
         website=payload.website,
         address=payload.address,
+        city=payload.city,
+        state=payload.state,
+        country=payload.country
     )
     db.add(c)
     db.commit()
@@ -79,11 +82,16 @@ def list_all_company_admins(db: Session = Depends(get_db)):
             "role": admin.role,
             "api_key": admin.api_key,
             # Convert empty string to None for proper validation
+            "firstname": admin.firstname,
+            "lastname": admin.lastname,
             "email": admin.email if admin.email else None,
-            "address": admin.address,
             "contact_number": admin.contact_number,
             "profile_image": admin.profile_image,
-            "company_name": admin.company.name if admin.company else None
+            "company_name": admin.company.name if admin.company else None,
+            "address": admin.address,
+            "city": admin.city,
+            "state": admin.state,
+            "country": admin.country
         }
         result.append(admin_dict)
 
@@ -161,10 +169,15 @@ def create_first_admin(
         user_code=payload.user_code,
         role="admin",
         hashed_password=hashed_pass,
+        firstname=payload.firstname,
+        lastname=payload.lastname,
         email=payload.email,
-        address=payload.address,
         contact_number=payload.contact_number,
         api_key=None,  # No API key for JWT users
+        address=payload.address,
+        city=payload.city,
+        state=payload.state,
+        country=payload.country
     )
     db.add(user)
     db.commit()
@@ -238,10 +251,15 @@ def create_superadmin_user(
         user_code=payload.user_code,
         role="superadmin",
         hashed_password=hashed_pass,
+        firstname=payload.firstname,
+        lastname=payload.lastname,
         email=payload.email,
-        address=payload.address,
         contact_number=payload.contact_number,
         api_key=None,  # No API key for JWT users
+        address=payload.address,
+        city=payload.city,
+        state=payload.state,
+        country=payload.country
     )
     db.add(user)
     db.commit()

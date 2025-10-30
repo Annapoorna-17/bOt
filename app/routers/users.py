@@ -86,9 +86,14 @@ def create_user(
         user_code=payload.user_code,
         role=payload.role,
         hashed_password=hashed_pass,
+        firstname=payload.firstname,
+        lastname=payload.lastname,
         email=payload.email,
-        address=payload.address,
         contact_number=payload.contact_number,
+        address=payload.address,
+        city=payload.city,
+        state=payload.state,
+        country=payload.country
     )
     db.add(u)
     db.commit()
@@ -134,11 +139,19 @@ def list_users(
             "role": user.role,
             "api_key": user.api_key, 
             "email": user.email if user.email else None,
-            "address": user.address,
+            "api_key": user.api_key,
+            # Convert empty string to None for proper validation
+            "email": user.email if user.email else None,
+            "firstname": user.firstname,
+            "lastname": user.lastname,            
             "contact_number": user.contact_number,
             "profile_image": user.profile_image,
-            "company_name": user.company.name if user.company else None, 
-            "is_active": user.is_active 
+            "company_name": user.company.name if user.company else None,
+            
+            "address": user.address,
+            "city": user.city,
+            "state": user.state,
+            "country": user.country
         }
         result.append(user_dict)
 
@@ -366,12 +379,27 @@ def update_profile(
     # Update fields if provided
     if payload.display_name is not None:
         current_user.display_name = payload.display_name
+    if payload.firstname is not None:
+        current_user.firstname = payload.firstname
+    if payload.lastname is not None:
+        current_user.lastname = payload.lastname
     if payload.email is not None:
         current_user.email = payload.email
-    if payload.address is not None:
-        current_user.address = payload.address
+    
     if payload.contact_number is not None:
         current_user.contact_number = payload.contact_number
+    if payload.firstname is not None:
+        current_user.firstname = payload.firstname
+    if payload.lastname is not None:
+        current_user.lastname = payload.lastname
+    if payload.address is not None:
+        current_user.address = payload.address
+    if payload.city is not None:
+        current_user.city = payload.city
+    if payload.state is not None:
+        current_user.state = payload.state
+    if payload.country is not None:
+        current_user.country = payload.country
 
     db.commit()
     db.refresh(current_user)
