@@ -21,14 +21,15 @@ class Company(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    users = relationship("User", back_populates="company")
-    documents = relationship("Document", back_populates="company")
-    websites = relationship("Website", back_populates="company")
+    # Cascade delete: when a company is deleted, all related users, documents, and websites are also deleted
+    users = relationship("User", back_populates="company", cascade="all, delete-orphan")
+    documents = relationship("Document", back_populates="company", cascade="all, delete-orphan")
+    websites = relationship("Website", back_populates="company", cascade="all, delete-orphan")
 
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True)
-    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
     display_name = Column(String(255), nullable=False)
     user_code = Column(String(64), unique=True, index=True, nullable=False)  # e.g., qwert-uds1
     role = Column(String(32), nullable=False)  # "superadmin", "admin", or "user"
@@ -61,8 +62,8 @@ class User(Base):
 class Document(Base):
     __tablename__ = "documents"
     id = Column(Integer, primary_key=True)
-    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False)
-    uploader_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
+    uploader_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     tenant_code = Column(String(64), index=True, nullable=False)
     user_code = Column(String(64), index=True, nullable=False)
     filename = Column(String(512), nullable=False)  # stored file name e.g., qwert_uds1.pdf
@@ -83,8 +84,8 @@ class Document(Base):
 class Website(Base):
     __tablename__ = "websites"
     id = Column(Integer, primary_key=True)
-    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False)
-    uploader_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
+    uploader_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     tenant_code = Column(String(64), index=True, nullable=False)
     user_code = Column(String(64), index=True, nullable=False)
     url = Column(String(2048), nullable=False)  # original URL

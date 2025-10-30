@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, field_validator
 from typing import Optional, List
 from datetime import datetime
 
@@ -13,6 +13,21 @@ class CompanyCreate(BaseModel):
     city: Optional[str] = None
     state: Optional[str] = None
     country: Optional[str] = None
+
+class CompanyUpdate(BaseModel):
+    """Schema for updating company information."""
+    name: Optional[str] = None
+    slug_url: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    website: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    country: Optional[str] = None
+
+    class Config:
+        from_attributes = True
 
 class CompanyOut(BaseModel):
     id: int
@@ -104,6 +119,14 @@ class UserUpdate(BaseModel):
     state: Optional[str] = None
     country: Optional[str] = None
 
+    @field_validator('*', mode='before')
+    @classmethod
+    def empty_str_to_none(cls, v):
+        """Convert empty strings to None for all fields."""
+        if isinstance(v, str) and v.strip() == '':
+            return None
+        return v
+
     class Config:
         from_attributes = True
 
@@ -113,12 +136,17 @@ class AdminUserUpdate(BaseModel):
     """Schema for an admin updating another user's profile information."""
     display_name: Optional[str] = None
     role: Optional[str] = Field(None, pattern="^(admin|user)$") # Allow role changes
-    address: Optional[str] = None
+    email: Optional[EmailStr] = None
+    firstname: Optional[str] = None
+    lastname: Optional[str] = None
     contact_number: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    country: Optional[str] = None
     is_active: Optional[bool] = None # Optional: Allow admin to activate/deactivate
 
-    # Note: Exclude fields admins shouldn't change directly, like email or password.
-    # Password changes should go through the reset flow.
+    # Note: Password changes should go through the reset flow.
 
     class Config:
         from_attributes = True
@@ -172,6 +200,7 @@ class QueryRequest(BaseModel):
     question: str
     top_k: int = 8
     user_filter: bool = False  # if True, filter by uploader user_code too
+    source_type: str = "all"  # "all", "documents", or "websites" - filter by source type
 
 class QueryAnswer(BaseModel):
     answer: str
@@ -193,11 +222,23 @@ class DocumentOut(BaseModel):
 class WebsiteSubmit(BaseModel):
     url: str
 
+class WebsiteSubmitBatch(BaseModel):
+    """Schema for submitting multiple websites at once."""
+    urls: List[str]
+
 class WebsiteResponse(BaseModel):
     website_id: int
     url: str
     title: str
     chunks_indexed: int
+
+class WebsiteBatchResponse(BaseModel):
+    """Response for batch website scraping."""
+    results: List[WebsiteResponse]
+    total: int
+    successful: int
+    failed: int
+    errors: List[dict]  # List of {"url": str, "error": str}
 
 class WebsiteOut(BaseModel):
     id: int

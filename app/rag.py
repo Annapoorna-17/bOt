@@ -456,16 +456,58 @@ def pdf_to_pinecone(file_path: str, tenant_code: str, user_code: str, stored_fil
     """Backward compatibility wrapper for document_to_pinecone."""
     return document_to_pinecone(file_path, tenant_code, user_code, stored_filename)
 
-def search(tenant_code: str, query: str, top_k: int = 8, filter_user_code: str | None = None):
+def search(tenant_code: str, query: str, top_k: int = 8, filter_user_code: str | None = None, source_type: str = "all"):
+    """
+    Search for relevant content in Pinecone.
+
+    Args:
+        tenant_code: Tenant identifier
+        query: Search query
+        top_k: Number of results to return
+        filter_user_code: Optional user filter
+        source_type: Filter by source type - "all", "documents", or "websites"
+    """
     q_emb = oai.embeddings.create(model=EMBED_MODEL, input=[query]).data[0].embedding
+
+    # Build filter - start with tenant filter
     flt = {"tenant_code": {"$eq": tenant_code}}
+
+    # Add source type filter if not "all"
+    if source_type == "documents":
+        flt = {"$and": [flt, {"source_type": {"$eq": "document"}}]}
+        print(f"DEBUG: Filtering to DOCUMENTS only")
+    elif source_type == "websites":
+        flt = {"$and": [flt, {"source_type": {"$eq": "website"}}]}
+        print(f"DEBUG: Filtering to WEBSITES only")
+    else:
+        print(f"DEBUG: Searching ALL sources (documents + websites)")
+
+    # Add user filter if specified
     if filter_user_code:
         flt = {"$and": [flt, {"user_code": {"$eq": filter_user_code}}]}
+
+    print(f"DEBUG: Pinecone filter: {flt}")
+
     res = index.query(
         vector=q_emb, top_k=top_k, namespace=tenant_code,
         filter=flt, include_metadata=True
     )
-    return res.matches or []
+
+    matches = res.matches or []
+    print(f"DEBUG: Found {len(matches)} matches")
+
+    # Debug: Show what sources were found
+    if matches:
+        for i, m in enumerate(matches[:5]):  # Show first 5
+            source_type_found = m.metadata.get("source_type", "unknown")
+            if source_type_found == "website":
+                source_name = m.metadata.get("url", "unknown")
+            else:
+                source_name = m.metadata.get("doc", "unknown")
+            score = m.score if hasattr(m, 'score') else 'N/A'
+            print(f"DEBUG: Match {i+1}: {source_type_found} - {source_name} (score: {score})")
+
+    return matches
 
 def _clean_answer_text(text: str) -> str:
     """
@@ -531,7 +573,7 @@ def synthesize_answer(question: str, contexts: List[str]) -> str:
     Enhanced with chatbot-friendly formatting instructions.
     """
     # Enhanced system prompt for chatbot-friendly responses
-    system_prompt = """You are a professional AI assistant in a chatbot interface. Your responses must be:
+    system_prompt = """You are a helpful AI assistant in a chatbot interface. Provide clear, accurate answers.
 
 FORMATTING RULES:
 1. Use natural, conversational language suitable for chat
@@ -553,19 +595,17 @@ WHEN LISTS ARE EXPECTED:
 RESPONSE STYLE:
 - Be direct and precise
 - Avoid verbose introductions like "Based on the context provided..."
-- If information is missing, politely say "I don't have that information"
-- Never make up information beyond what's in the context
-- For factual questions, give factual answers
+- For factual questions, give factual answers directly
 - For list questions, give list answers
+- Answer based on the context provided
+- If information is clearly missing from the context, politely say you don't have that information
 
 Remember: You are chatting with a user, not writing a formal document."""
 
     user_prompt = (
         f"Question: {question}\n\n"
         "Context:\n" + "\n\n---\n".join(contexts[:12]) + "\n\n"
-        "Provide a clear, natural answer based ONLY on the information in the context above. "
-        "If the question expects a list, format your response as a list. "
-        "Keep your response clean and chatbot-friendly."
+        "Provide a clear, helpful answer based on the information in the context above."
     )
 
     chat = oai.chat.completions.create(

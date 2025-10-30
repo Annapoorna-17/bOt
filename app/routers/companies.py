@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from ..db import get_db, Base, engine
 from ..models import Company, User
-from ..schemas import CompanyCreate, CompanyOut, UserCreate, UserOut, SuperadminCreate
+from ..schemas import CompanyCreate, CompanyUpdate, CompanyOut, UserCreate, UserOut, SuperadminCreate
 from ..security import require_superadmin, SUPERADMIN_SYSTEM_TENANT
 from ..auth import hash_password
 
@@ -62,6 +62,92 @@ def list_companies(db: Session = Depends(get_db)):
     """
     companies = db.query(Company).order_by(Company.created_at.desc()).all()
     return companies
+
+
+@router.put("/{tenant_code}", response_model=CompanyOut, dependencies=[Depends(require_superadmin)])
+def update_company(
+    tenant_code: str,
+    payload: CompanyUpdate,
+    db: Session = Depends(get_db)
+):
+    """
+    Update a company's information. Superadmin only.
+    """
+    # Find the company
+    company = db.query(Company).filter(Company.tenant_code == tenant_code).first()
+    if not company:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Company with tenant_code '{tenant_code}' not found"
+        )
+
+    # Prevent updating the reserved superadmin tenant
+    if company.tenant_code.upper() == SUPERADMIN_SYSTEM_TENANT.upper():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"The system tenant '{SUPERADMIN_SYSTEM_TENANT}' cannot be updated"
+        )
+
+    # Check for slug_url uniqueness if being updated
+    if payload.slug_url and payload.slug_url != company.slug_url:
+        existing = db.query(Company).filter(
+            Company.slug_url == payload.slug_url,
+            Company.id != company.id
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="slug_url already exists for another company"
+            )
+
+    # Update fields that are provided
+    update_data = payload.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        if hasattr(company, key):
+            setattr(company, key, value)
+
+    db.commit()
+    db.refresh(company)
+    return company
+
+
+@router.delete("/{tenant_code}", dependencies=[Depends(require_superadmin)])
+def delete_company(
+    tenant_code: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a company and all associated users. Superadmin only.
+    WARNING: This is a destructive operation that will delete all users belonging to this company.
+    Documents and websites remain in storage and Pinecone.
+    """
+    # Find the company
+    company = db.query(Company).filter(Company.tenant_code == tenant_code).first()
+    if not company:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Company with tenant_code '{tenant_code}' not found"
+        )
+
+    # Prevent deleting the reserved superadmin tenant
+    if company.tenant_code.upper() == SUPERADMIN_SYSTEM_TENANT.upper():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"The system tenant '{SUPERADMIN_SYSTEM_TENANT}' cannot be deleted"
+        )
+
+    # Count associated users for logging/warning
+    user_count = db.query(User).filter(User.company_id == company.id).count()
+
+    # Delete the company (cascade should handle users if configured in models)
+    db.delete(company)
+    db.commit()
+
+    return {
+        "message": f"Company '{tenant_code}' and {user_count} associated user(s) deleted successfully",
+        "tenant_code": tenant_code,
+        "users_deleted": user_count
+    }
 
 
 @router.get("/admins", response_model=list[UserOut], dependencies=[Depends(require_superadmin)])

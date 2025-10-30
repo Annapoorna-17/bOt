@@ -15,6 +15,7 @@ from .routers.websites import router as websites_router
 from .routers.query import router as query_router
 from .routers.auth import router as auth_router
 from .routers.widget import router as widget_router
+from .routers.tenant import router as tenant_router
 
 from .db import Base, engine
 
@@ -45,6 +46,7 @@ app.include_router(documents_router)  # Document upload/management
 app.include_router(websites_router)   # Website scraping/management
 app.include_router(query_router)      # RAG queries
 app.include_router(widget_router)     # Widget and super-admin company queries
+app.include_router(tenant_router)     # Tenant-scoped endpoints (RECOMMENDED FOR FRONTEND)
 
 @app.on_event("startup")
 def _setup():

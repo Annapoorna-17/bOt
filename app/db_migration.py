@@ -148,14 +148,95 @@ def migrate_database():
     if modify_column_if_needed("users", "api_key", "VARCHAR(128) NULL"):
         migrations_applied += 1
 
-    # Future migrations can be added here
-    # Example:
-    # if add_column_if_missing("table_name", "new_field", "VARCHAR(100) NULL"):
-    #     migrations_applied += 1
+    # Migration 4: Add CASCADE DELETE to foreign keys
+    print("\n[4] Updating foreign keys with CASCADE DELETE...")
+    try:
+        with engine.connect() as conn:
+            # Get existing foreign key names
+            inspector = inspect(engine)
+
+            # Users table - company_id foreign key
+            try:
+                print("  Updating users.company_id foreign key...")
+                fk_info = inspector.get_foreign_keys("users")
+                users_company_fk = next((fk['name'] for fk in fk_info if 'company_id' in fk['constrained_columns']), None)
+
+                if users_company_fk:
+                    conn.execute(text(f"ALTER TABLE users DROP FOREIGN KEY {users_company_fk}"))
+                    conn.execute(text(
+                        "ALTER TABLE users ADD CONSTRAINT users_company_fk "
+                        "FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE"
+                    ))
+                    conn.commit()
+                    print(f"  [OK] Updated users.company_id foreign key with CASCADE DELETE")
+                    migrations_applied += 1
+                else:
+                    print(f"  [SKIP] No foreign key found on users.company_id")
+            except Exception as e:
+                print(f"  [ERROR] Failed to update users.company_id: {e}")
+
+            # Documents table - company_id and uploader_id foreign keys
+            try:
+                print("  Updating documents foreign keys...")
+                fk_info = inspector.get_foreign_keys("documents")
+
+                docs_company_fk = next((fk['name'] for fk in fk_info if 'company_id' in fk['constrained_columns']), None)
+                if docs_company_fk:
+                    conn.execute(text(f"ALTER TABLE documents DROP FOREIGN KEY {docs_company_fk}"))
+                    conn.execute(text(
+                        "ALTER TABLE documents ADD CONSTRAINT documents_company_fk "
+                        "FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE"
+                    ))
+                    migrations_applied += 1
+
+                docs_uploader_fk = next((fk['name'] for fk in fk_info if 'uploader_id' in fk['constrained_columns']), None)
+                if docs_uploader_fk:
+                    conn.execute(text(f"ALTER TABLE documents DROP FOREIGN KEY {docs_uploader_fk}"))
+                    conn.execute(text(
+                        "ALTER TABLE documents ADD CONSTRAINT documents_uploader_fk "
+                        "FOREIGN KEY (uploader_id) REFERENCES users(id) ON DELETE CASCADE"
+                    ))
+                    migrations_applied += 1
+
+                conn.commit()
+                print(f"  [OK] Updated documents foreign keys with CASCADE DELETE")
+            except Exception as e:
+                print(f"  [ERROR] Failed to update documents foreign keys: {e}")
+
+            # Websites table - company_id and uploader_id foreign keys
+            try:
+                print("  Updating websites foreign keys...")
+                fk_info = inspector.get_foreign_keys("websites")
+
+                web_company_fk = next((fk['name'] for fk in fk_info if 'company_id' in fk['constrained_columns']), None)
+                if web_company_fk:
+                    conn.execute(text(f"ALTER TABLE websites DROP FOREIGN KEY {web_company_fk}"))
+                    conn.execute(text(
+                        "ALTER TABLE websites ADD CONSTRAINT websites_company_fk "
+                        "FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE"
+                    ))
+                    migrations_applied += 1
+
+                web_uploader_fk = next((fk['name'] for fk in fk_info if 'uploader_id' in fk['constrained_columns']), None)
+                if web_uploader_fk:
+                    conn.execute(text(f"ALTER TABLE websites DROP FOREIGN KEY {web_uploader_fk}"))
+                    conn.execute(text(
+                        "ALTER TABLE websites ADD CONSTRAINT websites_uploader_fk "
+                        "FOREIGN KEY (uploader_id) REFERENCES users(id) ON DELETE CASCADE"
+                    ))
+                    migrations_applied += 1
+
+                conn.commit()
+                print(f"  [OK] Updated websites foreign keys with CASCADE DELETE")
+            except Exception as e:
+                print(f"  [ERROR] Failed to update websites foreign keys: {e}")
+
+    except Exception as e:
+        print(f"  [ERROR] CASCADE DELETE migration failed: {e}")
 
     print("\n" + "=" * 60)
     if migrations_applied > 0:
-        print(f"[SUCCESS] Migration complete: {migrations_applied} column(s) added")
+        print(f"[SUCCESS] Migration complete: {migrations_applied} change(s) applied")
     else:
         print("[SUCCESS] Database schema is up to date")
     print("=" * 60)

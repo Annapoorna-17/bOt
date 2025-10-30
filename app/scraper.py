@@ -108,21 +108,62 @@ def _extract_text_from_html(html: str, base_url: str) -> Tuple[str, str]:
 
 def _extract_images_from_html(html: str, base_url: str) -> List[str]:
     """
-    Extract image URLs from HTML.
+    Extract image URLs from HTML with minimal filtering.
     Returns list of absolute image URLs.
     """
     soup = BeautifulSoup(html, 'html.parser')
     image_urls = []
 
+    # Very minimal skip patterns - only truly decorative items
+    skip_patterns = ['favicon', 'icon-', 'logo-', 'sprite', '1x1', 'pixel', 'blank.']
+
     # Find all img tags
     for img in soup.find_all('img'):
-        src = img.get('src') or img.get('data-src')
-        if src:
-            # Convert relative URLs to absolute
-            absolute_url = urljoin(base_url, src)
-            # Filter out common non-content images
-            if not any(x in absolute_url.lower() for x in ['icon', 'logo', 'avatar', 'btn', 'button']):
-                image_urls.append(absolute_url)
+        # Try multiple attributes (Wikipedia uses srcset, src, data-src, etc.)
+        src = None
+
+        # Try srcset first (Wikipedia uses this)
+        srcset = img.get('srcset')
+        if srcset:
+            # srcset can have multiple URLs, take the first one
+            src = srcset.split(',')[0].split()[0]
+
+        # Fallback to src attributes
+        if not src:
+            src = img.get('src') or img.get('data-src') or img.get('data-lazy-src')
+
+        if not src:
+            continue
+
+        # Convert relative URLs to absolute
+        absolute_url = urljoin(base_url, src)
+
+        # Skip data URLs
+        if absolute_url.startswith('data:'):
+            continue
+
+        # Very minimal filtering - only skip obvious UI elements
+        url_lower = absolute_url.lower()
+        if any(pattern in url_lower for pattern in skip_patterns):
+            continue
+
+        # Skip very small images by dimensions (if specified)
+        width = img.get('width')
+        height = img.get('height')
+        if width and height:
+            try:
+                w = int(width.replace('px', ''))
+                h = int(height.replace('px', ''))
+                if w < 30 or h < 30:  # Very small threshold
+                    continue
+            except (ValueError, TypeError):
+                pass
+
+        image_urls.append(absolute_url)
+
+    print(f"DEBUG: _extract_images_from_html found {len(image_urls)} images")
+    if image_urls:
+        print(f"DEBUG: Sample images: {image_urls[:3]}")
 
     return image_urls
 
@@ -145,20 +186,30 @@ async def _download_and_analyze_image(
 
             print(f"DEBUG: Downloading image: {img_url}")
 
-            # Reduced timeout from 30s to 10s per image
-            response = await client.get(img_url, timeout=10.0, follow_redirects=True)
+            # Skip SVG files as they can't be processed by PIL
+            if img_url.lower().endswith('.svg'):
+                print(f"DEBUG: Skipping SVG file (not supported by Vision API)")
+                return ""
+
+            # Reduced timeout from 10s to 7s per image for faster processing
+            response = await client.get(img_url, timeout=7.0, follow_redirects=True)
             response.raise_for_status()
 
             # Load image with size limit check
             image_bytes = response.content
 
-            # Check file size before loading (skip if > 10MB)
-            if len(image_bytes) > 10 * 1024 * 1024:
+            # Check file size before loading (skip if > 5MB for faster processing)
+            if len(image_bytes) > 5 * 1024 * 1024:
                 print(f"DEBUG: Skipping large image (>{len(image_bytes)/1024/1024:.1f}MB)")
                 return ""
 
-            pil_image = Image.open(io.BytesIO(image_bytes))
-            print(f"DEBUG: Image loaded: {pil_image.width}x{pil_image.height}px, mode={pil_image.mode}")
+            # Try to open image with PIL
+            try:
+                pil_image = Image.open(io.BytesIO(image_bytes))
+                print(f"DEBUG: Image loaded: {pil_image.width}x{pil_image.height}px, mode={pil_image.mode}")
+            except Exception as img_error:
+                print(f"DEBUG: Failed to open image with PIL: {img_error}")
+                return ""
 
             # Skip very small images (likely decorative/icons)
             if pil_image.width < 50 or pil_image.height < 50:
@@ -196,6 +247,7 @@ async def _download_and_analyze_image(
 def _chunk_text(text: str, max_chars: int = 3000, overlap: int = 400):
     """
     Simple, fast chunker that respects sentence boundaries when possible.
+    Fixed infinite loop issue.
     """
     text = re.sub(r'\s+', ' ', text).strip()
 
@@ -204,20 +256,35 @@ def _chunk_text(text: str, max_chars: int = 3000, overlap: int = 400):
 
     chunks = []
     start = 0
-    end = 0
+
     while start < len(text):
         end = min(start + max_chars, len(text))
         window = text[start:end]
+
+        # Find sentence boundary
         cut = max(window.rfind('. '), window.rfind('? '), window.rfind('! '))
+
+        # If no sentence boundary or at end, use full window
         if cut == -1 or end == len(text):
             cut = len(window)
+        else:
+            cut += 1  # Include the punctuation
+
         chunk = window[:cut].strip()
         if chunk:
             chunks.append(chunk)
-        start = start + cut
-        start = max(0, start - overlap)
 
-        if end == len(text):
+        # Move forward (FIXED: ensure we always move forward)
+        next_start = start + cut - overlap
+
+        # Ensure we make progress (prevent infinite loop)
+        if next_start <= start:
+            next_start = start + max(1, cut // 2)  # Jump at least halfway
+
+        start = next_start
+
+        # Safety check: if we've reached the end, break
+        if end >= len(text):
             break
 
     # dedupe / clean
@@ -227,6 +294,8 @@ def _chunk_text(text: str, max_chars: int = 3000, overlap: int = 400):
         if c and c != last:
             out.append(c)
             last = c
+
+    print(f"DEBUG: Chunking complete, created {len(out)} chunks from {len(text)} chars")
     return out
 
 
@@ -270,7 +339,7 @@ async def scrape_and_index_website(
     tenant_code: str,
     user_code: str,
     max_images: int = 10,
-    max_concurrent_images: int = 3,
+    max_concurrent_images: int = 5,
     progress_callback: Optional[Callable] = None
 ) -> Tuple[str, int]:
     """
@@ -282,7 +351,7 @@ async def scrape_and_index_website(
         tenant_code: Tenant identifier
         user_code: User identifier
         max_images: Maximum number of images to analyze (to control costs)
-        max_concurrent_images: Max number of images to process concurrently (default: 3)
+        max_concurrent_images: Max number of images to process concurrently (default: 5, increased from 3)
         progress_callback: Optional async callback for progress updates
 
     Returns:
@@ -291,8 +360,8 @@ async def scrape_and_index_website(
     print(f"DEBUG: Starting website scraping for {url}")
 
     # Create async HTTP client with connection pooling and limits
-    limits = httpx.Limits(max_keepalive_connections=5, max_connections=10)
-    timeout = httpx.Timeout(15.0, connect=5.0)  # Reduced from 30s to 15s
+    limits = httpx.Limits(max_keepalive_connections=10, max_connections=20)
+    timeout = httpx.Timeout(12.0, connect=4.0)  # Reduced from 15s to 12s for faster processing
 
     async with httpx.AsyncClient(limits=limits, timeout=timeout, follow_redirects=True) as client:
         # Fetch HTML
@@ -328,6 +397,7 @@ async def scrape_and_index_website(
         # Analyze images CONCURRENTLY with semaphore control
         image_descriptions = []
         if images_to_process:
+            print(f"DEBUG: Processing {len(images_to_process)} images...")
             if progress_callback:
                 await progress_callback(f"Processing {len(images_to_process)} images in parallel...")
 
@@ -340,8 +410,10 @@ async def scrape_and_index_website(
                 for img_url in images_to_process
             ]
 
+            print(f"DEBUG: Waiting for {len(tasks)} image processing tasks...")
             # Wait for all image processing to complete
             descriptions = await asyncio.gather(*tasks, return_exceptions=True)
+            print(f"DEBUG: Image processing complete, got {len(descriptions)} results")
 
             # Collect successful descriptions
             for i, desc in enumerate(descriptions):
@@ -350,8 +422,11 @@ async def scrape_and_index_website(
                     print(f"DEBUG: Added description for image {i+1}")
                 elif isinstance(desc, Exception):
                     print(f"DEBUG: Image {i+1} failed with exception: {desc}")
+        else:
+            print(f"DEBUG: No images to process, skipping image analysis")
 
     # Combine text and image descriptions
+    print(f"DEBUG: Combining content...")
     if progress_callback:
         await progress_callback("Combining content and creating embeddings...")
 
@@ -360,18 +435,25 @@ async def scrape_and_index_website(
     if image_descriptions:
         all_content += "\n\n=== VISUAL CONTENT FROM WEBSITE ===\n"
         all_content += "\n".join(image_descriptions)
-        print(f"DEBUG: Final content length: {len(all_content)} chars")
+
+    print(f"DEBUG: Final content length: {len(all_content)} chars")
 
     # Chunk and index
     if not all_content.strip():
+        print(f"DEBUG: No content to index, returning early")
         return title, 0
 
+    print(f"DEBUG: Chunking text...")
     chunks = _chunk_text(all_content)
+    print(f"DEBUG: Created {len(chunks)} chunks")
 
     if progress_callback:
         await progress_callback(f"Indexing {len(chunks)} chunks to vector database...")
 
-    num_chunks = upsert_website_chunks(tenant_code, user_code, url, chunks)
+    # Run the blocking upsert operation in a thread pool to avoid blocking the event loop
+    num_chunks = await asyncio.to_thread(
+        upsert_website_chunks, tenant_code, user_code, url, chunks
+    )
 
     if progress_callback:
         await progress_callback(f"Completed! Indexed {num_chunks} chunks.")

@@ -85,12 +85,20 @@ def widget_query(
             detail="Invalid widget key"
         )
 
+    # Validate source_type
+    if payload.source_type not in ["all", "documents", "websites"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid source_type '{payload.source_type}'. Must be 'all', 'documents', or 'websites'."
+        )
+
     # Search in company's namespace
     matches = search(
         tenant_code=company.tenant_code,
         query=payload.question,
         top_k=payload.top_k,
-        filter_user_code=None  # Widget searches all company data
+        filter_user_code=None,  # Widget searches all company data
+        source_type=payload.source_type
     )
 
     if not matches:
@@ -133,12 +141,20 @@ def superadmin_company_query(
             detail=f"Company with tenant_code '{tenant_code}' not found"
         )
 
+    # Validate source_type
+    if payload.source_type not in ["all", "documents", "websites"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid source_type '{payload.source_type}'. Must be 'all', 'documents', or 'websites'."
+        )
+
     # Search in company's namespace
     matches = search(
         tenant_code=tenant_code,
         query=payload.question,
         top_k=payload.top_k,
-        filter_user_code=None  # Super-admin searches all company data
+        filter_user_code=None,  # Super-admin searches all company data
+        source_type=payload.source_type
     )
 
     if not matches:

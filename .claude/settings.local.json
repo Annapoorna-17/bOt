@@ -1,24 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python -m py_compile:*)",
-      "Bash(pip install:*)",
-      "Bash(python -c:*)",
-      "Bash(where:*)",
-      "Bash(C:UsersMohakAppDataLocalProgramsPythonPython313python.exe -m pip install -r requirements.txt)",
-      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python313\\python.exe\" -m pip install -r requirements.txt)",
-      "Bash(python3:*)",
-      "Bash(python -m pip install:*)",
-      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.main import app; print(''✓ Application imports successfully'')\")",
-      "Bash(.\\venv\\Scripts\\python.exe -m pip install:*)",
-      "Bash(venv/Scripts/python.exe -m pip install:*)",
-      "Bash(python -m app.db_migration:*)",
-      "Bash(.\\venv\\Scripts\\python.exe:*)",
-      "Bash(pip uninstall:*)",
-      "Bash(timeout:*)",
-      "Bash(exit 0)",
-      "Bash(python -m uvicorn:*)",
-      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000)"
+      "Bash(curl:*)",
+      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.main import app; routes = [(r.path, list(r.methods)) for r in app.routes if hasattr(r, ''path'')]; print(f''Found {len(routes)} routes''); [print(f''{m} {p}'') for p, methods in routes for m in methods if m in [''GET'', ''POST'', ''PUT'', ''DELETE'']]\")",
+      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.main import app; print(''App initialized successfully''); print(''Routes available:'', len([r for r in app.routes]))\")"
     ],
     "deny": [],
     "ask": []

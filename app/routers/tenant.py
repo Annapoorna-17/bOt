@@ -24,7 +24,8 @@ from ..models import Document, User, Website
 from ..security import require_caller_with_tenant_in_path, require_admin_with_tenant_in_path, SUPERADMIN_SYSTEM_TENANT, Caller
 from ..schemas import (
     UploadResponse, DocumentOut, QueryRequest, QueryAnswer,
-    UserCreate, UserOut, UserUpdate, WebsiteSubmit, WebsiteResponse, WebsiteOut
+    UserCreate, UserOut, UserUpdate, WebsiteSubmit, WebsiteSubmitBatch,
+    WebsiteResponse, WebsiteBatchResponse, WebsiteOut
 )
 from ..rag import document_to_pinecone, search, synthesize_answer
 from ..scraper import scrape_and_index_website
@@ -202,7 +203,7 @@ async def scrape_website_tenant(
             tenant_code=caller.tenant.tenant_code,
             user_code=caller.user.user_code,
             max_images=10,  # Process up to 10 images
-            max_concurrent_images=3  # Process 3 images at a time
+            max_concurrent_images=5  # Process 5 images at a time (increased from 3)
         )
     except Exception as e:
         # URL is invalid or scraping failed - don't save to database
@@ -229,6 +230,119 @@ async def scrape_website_tenant(
         url=website.url,
         title=website.title or "",
         chunks_indexed=website.num_chunks
+    )
+
+@router.post("/{tenant_code}/websites/scrape-batch", response_model=WebsiteBatchResponse)
+async def scrape_websites_batch(
+    tenant_code: str,
+    payload: WebsiteSubmitBatch,
+    x_user_code: str = Header(..., alias="X-User-Code"),
+    x_api_key: str = Header(..., alias="X-API-Key"),
+    db: Session = Depends(get_db),
+):
+    """
+    Scrape and index multiple websites concurrently for the specified tenant.
+    This endpoint processes all URLs in parallel for maximum performance.
+    """
+    import asyncio
+
+    caller = require_caller_with_tenant_in_path(tenant_code, x_user_code, x_api_key, db)
+
+    if not payload.urls:
+        raise HTTPException(status_code=400, detail="At least one URL is required")
+
+    if len(payload.urls) > 50:
+        raise HTTPException(status_code=400, detail="Maximum 50 URLs can be processed at once")
+
+    results = []
+    errors = []
+
+    async def process_single_url(url: str):
+        """Process a single URL and return result or error."""
+        try:
+            # Compute URL hash for uniqueness checking
+            url_hash = hashlib.sha256(url.encode()).hexdigest()
+
+            # Check if URL already exists for this tenant
+            existing = db.query(Website).filter(
+                Website.company_id == caller.tenant.id,
+                Website.url_hash == url_hash
+            ).first()
+
+            if existing:
+                return {
+                    "status": "error",
+                    "url": url,
+                    "error": "This website has already been scraped by your tenant"
+                }
+
+            # Scrape and index (already async with concurrent image processing)
+            title, chunks = await scrape_and_index_website(
+                url=url,
+                tenant_code=caller.tenant.tenant_code,
+                user_code=caller.user.user_code,
+                max_images=10,
+                max_concurrent_images=5  # Increased from 3 to 5 for faster processing
+            )
+
+            # Create website record
+            website = Website(
+                company_id=caller.tenant.id,
+                uploader_id=caller.user.id,
+                tenant_code=caller.tenant.tenant_code,
+                user_code=caller.user.user_code,
+                url=url,
+                url_hash=url_hash,
+                title=title,
+                num_chunks=chunks,
+                status="indexed",
+            )
+            db.add(website)
+            db.commit()
+            db.refresh(website)
+
+            return {
+                "status": "success",
+                "data": WebsiteResponse(
+                    website_id=website.id,
+                    url=website.url,
+                    title=website.title or "",
+                    chunks_indexed=website.num_chunks
+                )
+            }
+
+        except Exception as e:
+            return {
+                "status": "error",
+                "url": url,
+                "error": str(e)
+            }
+
+    # Process all URLs concurrently
+    tasks = [process_single_url(url) for url in payload.urls]
+    results_raw = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Separate successful results from errors
+    for result in results_raw:
+        if isinstance(result, Exception):
+            errors.append({
+                "url": "unknown",
+                "error": str(result)
+            })
+        elif result["status"] == "success":
+            results.append(result["data"])
+        else:
+            errors.append({
+                "url": result["url"],
+                "error": result["error"]
+            })
+
+    return WebsiteBatchResponse(
+        results=results,
+        total=len(payload.urls),
+        successful=len(results),
+        failed=len(errors),
+        errors=errors
     )
 
 @router.get("/{tenant_code}/websites", response_model=List[WebsiteOut])
@@ -293,14 +407,37 @@ def query_tenant(
     x_api_key: str = Header(..., alias="X-API-Key"),
     db: Session = Depends(get_db),
 ):
-    """Query documents and websites for the specified tenant."""
+    """
+    Query documents and websites for the specified tenant.
+
+    Args:
+        source_type: Filter results by source type
+            - "all" (default): Search both documents and websites
+            - "documents": Search only uploaded documents (PDF, DOCX, XLSX, etc.)
+            - "websites": Search only scraped websites
+    """
     caller = require_caller_with_tenant_in_path(tenant_code, x_user_code, x_api_key, db)
+
+    # Validate source_type
+    if payload.source_type not in ["all", "documents", "websites"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid source_type '{payload.source_type}'. Must be 'all', 'documents', or 'websites'."
+        )
+
+    print(f"\n{'='*60}")
+    print(f"QUERY DEBUG - Tenant: {tenant_code}, User: {caller.user.user_code}")
+    print(f"Question: {payload.question}")
+    print(f"Source Type Filter: {payload.source_type}")
+    print(f"User Filter: {payload.user_filter}")
+    print(f"{'='*60}\n")
 
     matches = search(
         tenant_code=caller.tenant.tenant_code,
         query=payload.question,
         top_k=payload.top_k,
-        filter_user_code=caller.user.user_code if payload.user_filter else None
+        filter_user_code=caller.user.user_code if payload.user_filter else None,
+        source_type=payload.source_type
     )
 
     if not matches:
@@ -317,6 +454,10 @@ def query_tenant(
                 sources.append(m.metadata.get("url", "unknown"))
             else:
                 sources.append(m.metadata.get("doc", "unknown"))
+
+    print(f"\nDEBUG: Retrieved {len(contexts)} contexts from {len(sources)} sources")
+    print(f"DEBUG: Sources: {sources[:5]}")  # Show first 5 sources
+    print(f"\n{'='*60}\n")
 
     answer = synthesize_answer(payload.question, contexts)
 
@@ -351,8 +492,7 @@ def list_users_tenant(
             "email": user.email if user.email else None,
             "contact_number": user.contact_number,
             "profile_image": user.profile_image,
-            "company_name": user.company.name if user.company else None
-            
+            "company_name": user.company.name if user.company else None,
             "address": user.address,
             "city": user.city,
             "state": user.state,
