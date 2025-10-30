@@ -86,6 +86,7 @@ class UserOut(BaseModel):
     city: Optional[str] = None
     state: Optional[str] = None
     country: Optional[str] = None
+    is_active: bool = True
 
     class Config:
         from_attributes = True
