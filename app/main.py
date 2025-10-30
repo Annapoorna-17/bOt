@@ -14,6 +14,7 @@ from .routers.documents import router as documents_router
 from .routers.websites import router as websites_router
 from .routers.query import router as query_router
 from .routers.auth import router as auth_router
+from .routers.widget import router as widget_router
 
 from .db import Base, engine
 
@@ -43,6 +44,7 @@ app.include_router(users_router)      # User management
 app.include_router(documents_router)  # Document upload/management
 app.include_router(websites_router)   # Website scraping/management
 app.include_router(query_router)      # RAG queries
+app.include_router(widget_router)     # Widget and super-admin company queries
 
 @app.on_event("startup")
 def _setup():

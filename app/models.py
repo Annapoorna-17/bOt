@@ -9,6 +9,7 @@ class Company(Base):
     name = Column(String(255), nullable=False)
     tenant_code = Column(String(64), unique=True, index=True, nullable=False)  # e.g., qwert
     slug_url = Column(String(255), unique=True, nullable=False)  # e.g., https://service.com/qwert
+    widget_key = Column(String(128), unique=True, nullable=True)  # public key for embeddable widget
 
     email = Column(String(255), nullable=True)
     phone = Column(String(50), nullable=True)
