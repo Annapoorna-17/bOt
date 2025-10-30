@@ -55,8 +55,8 @@ class User(Base):
 
 
     company = relationship("Company", back_populates="users")
-    documents = relationship("Document", back_populates="uploader")
-    websites = relationship("Website", back_populates="uploader")
+    documents = relationship("Document", back_populates="uploader", cascade="all, delete-orphan")
+    websites = relationship("Website", back_populates="uploader", cascade="all, delete-orphan")
 
 class Document(Base):
     __tablename__ = "documents"

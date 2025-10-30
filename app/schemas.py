@@ -86,6 +86,7 @@ class UserOut(BaseModel):
     city: Optional[str] = None
     state: Optional[str] = None
     country: Optional[str] = None
+    is_active: bool = True
 
     class Config:
         from_attributes = True
@@ -106,7 +107,25 @@ class UserUpdate(BaseModel):
     class Config:
         from_attributes = True
 
-        # --- NEW SCHEMAS ADDED FOR AUTHENTICATION ---
+
+# --- NEW SCHEMA ADDED FOR ADMIN UPDATES ---
+class AdminUserUpdate(BaseModel):
+    """Schema for an admin updating another user's profile information."""
+    display_name: Optional[str] = None
+    role: Optional[str] = Field(None, pattern="^(admin|user)$") # Allow role changes
+    address: Optional[str] = None
+    contact_number: Optional[str] = None
+    is_active: Optional[bool] = None # Optional: Allow admin to activate/deactivate
+
+    # Note: Exclude fields admins shouldn't change directly, like email or password.
+    # Password changes should go through the reset flow.
+
+    class Config:
+        from_attributes = True
+# --- END OF NEW SCHEMA ---
+
+
+# --- NEW SCHEMAS ADDED FOR AUTHENTICATION ---
 
 class Token(BaseModel):
     """Schema for the login response."""

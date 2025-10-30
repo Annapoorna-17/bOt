@@ -10,7 +10,7 @@ from PIL import Image
 
 from ..db import get_db
 from ..models import User
-from ..schemas import UserCreate, UserOut, UserUpdate
+from ..schemas import UserCreate, UserOut, UserUpdate, AdminUserUpdate
 from ..auth import get_current_user, hash_password
 from ..security import SUPERADMIN_SYSTEM_TENANT
 from .. import models
@@ -105,16 +105,31 @@ def create_user(
 def list_users(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    include_inactive: bool = False
 ):
     """
-    List all users in your tenant.
-    Any authenticated user can see the user list.
+    List users.
+    - Superadmins can see all users across all tenants.
+    - Admins can only see users within their own tenant.
+    By default, only active users are returned. Use ?include_inactive=true to see all.
     """
-    users = db.query(User).filter(
-        User.company_id == current_user.company_id
-    ).order_by(User.created_at.desc()).all()
+    
+    # 1. Start the base query (no filters yet)
+    users_query = db.query(models.User) # <-- Start with just the User model
 
-    # Add company_name to each user
+    # 2. Conditionally apply tenant filter based on role
+    if current_user.role != "superadmin":
+        # If NOT superadmin, restrict to their own company
+        users_query = users_query.filter(models.User.company_id == current_user.company_id)
+    
+    # 3. Conditionally apply active filter
+    if not include_inactive:
+        users_query = users_query.filter(models.User.is_active == True) 
+
+    # 4. Apply ordering and execute the query
+    users = users_query.order_by(models.User.created_at.desc()).all()
+
+    # 5. Format the result
     result = []
     for user in users:
         user_dict = {
@@ -122,11 +137,13 @@ def list_users(
             "display_name": user.display_name,
             "user_code": user.user_code,
             "role": user.role,
+            "api_key": user.api_key, 
+            "email": user.email if user.email else None,
             "api_key": user.api_key,
             # Convert empty string to None for proper validation
-            "firstname": user.firstname,
-            "lastname": user.lastname,
             "email": user.email if user.email else None,
+            "firstname": user.firstname,
+            "lastname": user.lastname,            
             "contact_number": user.contact_number,
             "profile_image": user.profile_image,
             "company_name": user.company.name if user.company else None,
@@ -149,6 +166,195 @@ def get_current_user_info(
     Get your own user information.
     """
     return current_user
+
+# ============================================================
+# --- NEW ADMIN-SPECIFIC USER MANAGEMENT ENDPOINTS START HERE ---
+# ============================================================
+
+@router.get("/{user_id}", response_model=UserOut)
+def get_user_by_id(
+    user_id: int,
+    current_user: models.User = Depends(get_current_user), # Authenticates and gets user
+    db: Session = Depends(get_db),
+):
+    """
+    Get details for a specific user by ID.
+    - Admins can only view users within their own tenant.
+    - Superadmins can view users from any tenant.
+    """
+    # Role check (Admin or Superadmin required)
+    if current_user.role not in ["admin", "superadmin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin or Superadmin role required to view other user details"
+        )
+
+    # Find the target user
+    target_user = db.query(models.User).filter(models.User.id == user_id).first()
+
+    # Check if user exists
+    if not target_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # --- MODIFIED Tenant Isolation Check ---
+    # Allow superadmin to bypass tenant check
+    if current_user.role != "superadmin":
+        if target_user.company_id != current_user.company_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admins cannot view users from another tenant"
+            )
+    # --- END MODIFICATION ---
+
+    return target_user
+
+
+@router.put("/{user_id}", response_model=UserOut)
+def update_user_by_id(
+    user_id: int,
+    payload: AdminUserUpdate, # Use the schema for admin updates
+    current_user: models.User = Depends(get_current_user), # Authenticates and gets user
+    db: Session = Depends(get_db),
+):
+    """
+    Update another user's details by ID.
+    - Admins can only update users within their own tenant.
+    - Superadmins can update users from any tenant.
+    Admins/Superadmins cannot modify themselves via this endpoint.
+    """
+    # Role check (Admin or Superadmin required)
+    if current_user.role not in ["admin", "superadmin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin or Superadmin role required to update users"
+        )
+
+    # Find the target user
+    target_user = db.query(models.User).filter(models.User.id == user_id).first()
+
+    # Check if user exists
+    if not target_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # --- MODIFIED Tenant Isolation Check ---
+    # Allow superadmin to bypass tenant check
+    if current_user.role != "superadmin":
+        if target_user.company_id != current_user.company_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admins cannot update users from another tenant"
+            )
+    # --- END MODIFICATION ---
+
+    # Prevent modifying self via this endpoint
+    if target_user.id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot modify your own account using this endpoint. Use PUT /users/me instead."
+        )
+
+    # --- Business Logic Checks (Keep or Adjust as needed) ---
+    # Example: Prevent removing the last admin in the *target* tenant
+    if payload.role == 'user' and target_user.role == 'admin':
+        # Count other admins in the *target user's* company
+        admin_count = db.query(User).filter(
+            User.company_id == target_user.company_id, # Check in target tenant
+            User.role == 'admin',
+            User.id != target_user.id
+        ).count()
+        if admin_count == 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot remove the last admin role from the target tenant.")
+    # --- End Business Logic Checks ---
+
+    # Update fields present in the payload
+    update_data = payload.dict(exclude_unset=True)
+    updated = False
+    for key, value in update_data.items():
+        if hasattr(target_user, key):
+            # Special handling for role if needed (e.g., logging role changes)
+            # if key == 'role' and value != target_user.role:
+            #    print(f"Admin {current_user.user_code} changing role of user {target_user.user_code} to {value}")
+            setattr(target_user, key, value)
+            updated = True
+
+    if updated:
+        try:
+            db.commit()
+            db.refresh(target_user)
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to update user: {e}")
+
+    return target_user
+
+
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def soft_delete_user_by_id( # Renamed function for clarity (optional)
+    user_id: int,
+    current_user: models.User = Depends(get_current_user), # Authenticates and gets admin/superadmin
+    db: Session = Depends(get_db),
+):
+    """
+    Soft delete (deactivate) a user by ID. Admin/Superadmin only.
+    Admins/Superadmins cannot deactivate themselves using this endpoint.
+    Documents and websites uploaded by the user remain associated.
+    """
+    # Role check (Admin or Superadmin required)
+    if current_user.role not in ["admin", "superadmin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin or Superadmin role required to deactivate users"
+        )
+
+    # Find the target user
+    target_user = db.query(models.User).filter(models.User.id == user_id).first()
+
+    # Check if user exists
+    if not target_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # Tenant Isolation Check (Allow superadmin to bypass)
+    if current_user.role != "superadmin":
+        if target_user.company_id != current_user.company_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admins cannot deactivate users from another tenant"
+            )
+
+    # CRITICAL: Prevent deleting self
+    if target_user.id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot deactivate your own account via this endpoint."
+        )
+
+    # --- Soft Delete Logic ---
+    if target_user.is_active:
+        target_user.is_active = False
+        try:
+            # Optional: Clear sensitive data like API key or hashed_password if needed upon deactivation
+            # target_user.api_key = None
+            # target_user.hashed_password = None # Be careful if you need reactivation
+
+            db.commit()
+            print(f"User {target_user.user_code} (ID: {user_id}) deactivated.") # Optional logging
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to deactivate user: {e}")
+    else:
+        # User is already inactive, maybe return success or a specific message
+        print(f"User {target_user.user_code} (ID: {user_id}) is already inactive.") # Optional logging
+        pass # Still return 204
+
+    # No need to delete profile image file for soft delete
+
+    return None
+
+# ============================================================
+# --- END OF NEW ADMIN-SPECIFIC ENDPOINTS ---
+# ============================================================
+
+
 
 
 @router.put("/me", response_model=UserOut)
