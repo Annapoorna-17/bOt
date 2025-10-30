@@ -133,9 +133,9 @@ class UserUpdate(BaseModel):
 
 # --- NEW SCHEMA ADDED FOR ADMIN UPDATES ---
 class AdminUserUpdate(BaseModel):
-    """Schema for an admin updating another user's profile information."""
+    """Schema for superadmin updating admin/user profile information."""
     display_name: Optional[str] = None
-    role: Optional[str] = Field(None, pattern="^(admin|user)$") # Allow role changes
+    role: Optional[str] = Field(None, pattern="^(superadmin|admin|user)$") # Allow role changes including superadmin
     email: Optional[EmailStr] = None
     firstname: Optional[str] = None
     lastname: Optional[str] = None
@@ -210,6 +210,7 @@ class DocumentOut(BaseModel):
     id: int
     filename: str
     original_name: str
+    filepath: str  # Full path to the document file for download
     uploader_id: int
     user_code: str  # Added user_code field
     num_chunks: int

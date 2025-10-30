@@ -1,9 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(curl:*)",
-      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.main import app; routes = [(r.path, list(r.methods)) for r in app.routes if hasattr(r, ''path'')]; print(f''Found {len(routes)} routes''); [print(f''{m} {p}'') for p, methods in routes for m in methods if m in [''GET'', ''POST'', ''PUT'', ''DELETE'']]\")",
-      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.main import app; print(''App initialized successfully''); print(''Routes available:'', len([r for r in app.routes]))\")"
+      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.main import app; print(''App initialized successfully''); print(''Routes available:'', len([r for r in app.routes]))\")",
+      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.main import app; routes = [r for r in app.routes if hasattr(r, ''path'')]; key_routes = [r.path for r in routes if any(x in r.path for x in [''/documents'', ''/websites'', ''/query'', ''/users'', ''/companies''])]; print(''Key endpoints still available:''); [print(f''  {r}'') for r in sorted(set(key_routes))]\")"
     ],
     "deny": [],
     "ask": []

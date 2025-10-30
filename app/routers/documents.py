@@ -88,7 +88,7 @@ def upload_document(
 @router.get("", response_model=List[DocumentOut])
 def list_documents(
     # --- 6. USE new dependency ---
-    current_user: models.User = Depends(get_current_user), 
+    current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
     my_docs_only: bool = False,
 ):
@@ -104,7 +104,26 @@ def list_documents(
     if my_docs_only or current_user.role not in ["admin", "superadmin"]: # <-- Changed
         query = query.filter(Document.uploader_id == current_user.id) # <-- Changed
 
-    return query.order_by(Document.created_at.desc()).all()
+    documents = query.order_by(Document.created_at.desc()).all()
+
+    # Add filepath to each document
+    result = []
+    for doc in documents:
+        doc_dict = {
+            "id": doc.id,
+            "filename": doc.filename,
+            "original_name": doc.original_name,
+            "filepath": os.path.join(UPLOAD_DIR, doc.filename),
+            "uploader_id": doc.uploader_id,
+            "user_code": doc.user_code,
+            "num_chunks": doc.num_chunks,
+            "status": doc.status,
+            "created_at": doc.created_at,
+            "error_message": doc.error_message
+        }
+        result.append(doc_dict)
+
+    return result
 
 @router.delete("/{document_id}")
 def delete_document(
