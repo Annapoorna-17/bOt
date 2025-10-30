@@ -7,7 +7,7 @@ from .. import models
 from ..schemas import QueryRequest, QueryAnswer
 from ..rag import search, synthesize_answer
 
-# --- 2. REMOVED old auth imports (require_caller, Caller) ---
+# --- 2. REMOVED old auth imports (require_caller, Caller)---
 
 router = APIRouter(prefix="/query", tags=["Query"])
 
@@ -15,18 +15,20 @@ router = APIRouter(prefix="/query", tags=["Query"])
 def ask(
     payload: QueryRequest,
     # --- 3. USE new dependency ---
-    current_user: models.User = Depends(get_current_user), 
+    # current_user: models.User = Depends(get_current_user), 
     db: Session = Depends(get_db),
 ):
     # --- 4. UPDATE logic to use 'current_user' ---
     # Tenant-scoped search. Optional per-user filter.
     matches = search(
         # 'caller.tenant' is now 'current_user.company'
-        tenant_code=current_user.company.tenant_code, # <-- Changed
+        # tenant_code=current_user.company.tenant_code, # <-- Changed
+        tenant_code="stixis",
         query=payload.question,
         top_k=payload.top_k,
         # 'caller.user' is now 'current_user'
-        filter_user_code=current_user.user_code if payload.user_filter else None # <-- Changed
+        # filter_user_code=current_user.user_code if payload.user_filter else None # <-- Changed
+        filter_user_code=None
     )
     if not matches:
         return QueryAnswer(answer="I don't have enough information to answer that.", sources=[])
