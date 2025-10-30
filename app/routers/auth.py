@@ -51,15 +51,21 @@ def register_user(user_data: schemas.UserCreate, db: Session = Depends(get_db)):
     
     # Create new user
     new_user = models.User(
+        firstname=user_data.firstname,
+        lastname=user_data.lastname,
         email=user_data.email,
         hashed_password=hashed_password,
         company_id=company.id,
         display_name=user_data.display_name,
+        
         user_code=user_data.user_code,
         role=user_data.role,
-        address=user_data.address,
         contact_number=user_data.contact_number,
-        is_active=True  # Activate user on creation
+        is_active=True, # Activate user on creation
+        address=user_data.address,
+        city=user_data.city,
+        state=user_data.state,
+        country=user_data.country
     )
     
     try:

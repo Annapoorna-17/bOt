@@ -14,6 +14,9 @@ class Company(Base):
     phone = Column(String(50), nullable=True)
     website = Column(String(255), nullable=True)
     address = Column(String(255), nullable=True)
+    city = Column(String(100), nullable=True)
+    state = Column(String(100), nullable=True)
+    country = Column(String(100), nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -30,11 +33,17 @@ class User(Base):
     role = Column(String(32), nullable=False)  # "superadmin", "admin", or "user"
 
      # NEW FIELDS
+    firstname = Column(String(100), nullable=True)
+    lastname = Column(String(100), nullable=True)
     email = Column(String(255), unique=True, nullable=False)
-    address = Column(Text, nullable=True)
+    
     contact_number = Column(String(20), nullable=True)
     profile_image = Column(String(512), nullable=True)  # Stores filename/path to profile image
     # website = Column(String(255), nullable=True)
+    address = Column(Text, nullable=True)
+    city = Column(String(100), nullable=True)
+    state = Column(String(100), nullable=True)
+    country = Column(String(100), nullable=True)
 
     hashed_password = Column(String(255), nullable=True) # Made nullable for existing users
 

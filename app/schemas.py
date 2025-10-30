@@ -10,6 +10,9 @@ class CompanyCreate(BaseModel):
     phone: Optional[str] = None
     website: Optional[str] = None
     address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    country: Optional[str] = None
 
 class CompanyOut(BaseModel):
     id: int
@@ -21,6 +24,9 @@ class CompanyOut(BaseModel):
     phone: Optional[str] = None
     # website: Optional[str] = None
     address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    country: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -43,13 +49,19 @@ class UserCreate(BaseModel):
 
      # NEW FIELDS
     email: EmailStr  # <--- 2. CHANGED to EmailStr for consistency
-    address: Optional[str] = None
     contact_number: Optional[str] = None
     # website: Optional[str] = None
 
     # --- FIELD ADDED FOR AUTH ---
     # Add password field for registration
     password: str
+    firstname: Optional[str] = None
+    lastname: Optional[str] = None
+    contact_number: Optional[str] = None
+    address: Optional[str] = None # Deprecated
+    city: Optional[str] = None
+    state: Optional[str] = None
+    country: Optional[str] = None
 
 class UserOut(BaseModel):
     id: int
@@ -64,10 +76,15 @@ class UserOut(BaseModel):
     # NEW FIELDS
     # Made email optional to handle older records with empty/null email values
     email: Optional[EmailStr] = None
-    address: Optional[str] = None
+    firstname: Optional[str] = None
+    lastname: Optional[str] = None
     contact_number: Optional[str] = None
     profile_image: Optional[str] = None
     company_name: Optional[str] = None  # Added for list users response
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    country: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -77,8 +94,13 @@ class UserUpdate(BaseModel):
     """Schema for updating user profile information."""
     display_name: Optional[str] = None
     email: Optional[str] = None
-    address: Optional[str] = None
+    firstname: Optional[str] = None
+    lastname: Optional[str] = None
     contact_number: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    country: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -110,8 +132,13 @@ class SuperadminCreate(BaseModel):
     user_code: str
     email: EmailStr
     password: str
+    firstname: Optional[str] = None
+    lastname: Optional[str] = None
     address: Optional[str] = None
     contact_number: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    country: Optional[str] = None
 
 # --- END OF NEW SCHEMAS ---
 
