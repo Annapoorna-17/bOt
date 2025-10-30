@@ -19,6 +19,7 @@ class CompanyOut(BaseModel):
     name: str
     tenant_code: str
     slug_url: str
+    widget_key: Optional[str] = None
 
     email: Optional[str] = None
     phone: Optional[str] = None

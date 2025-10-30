@@ -106,6 +106,9 @@ def migrate_database():
         migrations_applied += 1
     # --- END NEW FIELDS ---
 
+    if add_column_if_missing("companies", "widget_key", "VARCHAR(128) NULL UNIQUE"):
+        migrations_applied += 1
+
     # Migration 2: Add user fields (email, address, contact_number)
     print("\n[2] Checking User table columns...")
 
