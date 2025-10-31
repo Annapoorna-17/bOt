@@ -30,5 +30,6 @@ build/
 # Uploaded documents
 uploaded_pdfs/
 
-# Claude Code documentation
+# Claude Code
 CLAUDE.md
+.claude/

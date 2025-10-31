@@ -38,7 +38,7 @@ class CompanyOut(BaseModel):
 
     email: Optional[str] = None
     phone: Optional[str] = None
-    # website: Optional[str] = None
+    website: Optional[str] = None
     address: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
