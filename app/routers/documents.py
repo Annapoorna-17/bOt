@@ -1,4 +1,4 @@
-import os
+import os,mimetypes
 import uuid
 from datetime import datetime
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
@@ -224,6 +224,10 @@ def preview_document(
     # Find the file in the correct directory
     file_path = get_document_path(doc.filename)
 
+    mime_type, _ = mimetypes.guess_type(file_path)
+    if not mime_type:
+        mime_type = "application/octet-stream"
+
     # Debug logging
     print(f"DEBUG - Preview request (normal user):")
     print(f"  Document ID: {document_id}")
@@ -243,7 +247,11 @@ def preview_document(
     return FileResponse(
         path=file_path,
         filename=doc.original_name,  # Use original filename for download
-        media_type="application/octet-stream"
+        media_type=mime_type,
+        headers={
+            "Content-Disposition": f'inline; filename="{doc.original_name}"',  # 👈 allows preview
+            "Accept-Ranges": "bytes",  # allows partial loading
+        }
     )
 
 
@@ -309,6 +317,11 @@ def preview_document_superadmin(
     # Find the file in the correct directory
     file_path = get_document_path(doc.filename)
 
+    # Guess MIME type based on file extension
+    mime_type, _ = mimetypes.guess_type(file_path)
+    if not mime_type:
+        mime_type = "application/octet-stream"
+
     # Debug logging
     print(f"DEBUG - Preview request (superadmin):")
     print(f"  Document ID: {document_id}")
@@ -328,6 +341,10 @@ def preview_document_superadmin(
     return FileResponse(
         path=file_path,
         filename=doc.original_name,  # Use original filename for download
-        media_type="application/octet-stream"
+        media_type=mime_type,
+        headers={
+            "Content-Disposition": f'inline; filename="{doc.original_name}"',  # 👈 allows preview
+            "Accept-Ranges": "bytes",  # allows partial loading
+        }
     )
 

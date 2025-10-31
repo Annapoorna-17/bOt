@@ -509,11 +509,50 @@ def search(tenant_code: str, query: str, top_k: int = 8, filter_user_code: str |
 
     return matches
 
+def _fix_list_formatting(text: str) -> str:
+    """
+    Fix list formatting by ensuring each bullet point or numbered item is on its own line.
+    This handles cases where the LLM generates bullets on the same line.
+    Uses multiple strategies to ensure proper formatting.
+    """
+    original_text = text
+
+    # Strategy 1: Fix bullets that appear mid-line (not after a newline)
+    # Replace any occurrence of " • " (space-bullet-space) that's not at line start with newline-bullet-space
+    text = re.sub(r'(?<!\n) ([•●○◦]) ', r'\n\1 ', text)
+
+    # Strategy 2: Also catch bullets with minimal spacing
+    text = re.sub(r'(?<!\n)([•●○◦]) ', r'\n\1 ', text)
+
+    # Strategy 3: Fix numbered lists - look for patterns like "text 1. " where not at line start
+    text = re.sub(r'(?<!\n) (\d+\.) ', r'\n\1 ', text)
+
+    # Strategy 4: Catch edge case where bullet is directly after text without much space
+    # Match: letter/number followed by space(s) and bullet
+    text = re.sub(r'([a-zA-Z0-9]) +([•●○◦]) ', r'\1\n\2 ', text)
+
+    # Clean up: Remove excessive spaces after bullets
+    text = re.sub(r'^([•●○◦])  +', r'\1 ', text, flags=re.MULTILINE)
+    text = re.sub(r'^(\d+\.)  +', r'\1 ', text, flags=re.MULTILINE)
+
+    # Debug logging
+    if text != original_text:
+        print(f"DEBUG: List formatting applied. Before length: {len(original_text)}, After length: {len(text)}")
+        # Count newlines added
+        newlines_before = original_text.count('\n')
+        newlines_after = text.count('\n')
+        print(f"DEBUG: Newlines before: {newlines_before}, after: {newlines_after}")
+
+    return text
+
 def _clean_answer_text(text: str) -> str:
     """
     Clean up answer text by removing unwanted symbols and formatting artifacts.
     Enhanced for chatbot-friendly responses with better list handling.
     """
+    # FIRST: Fix list formatting to ensure items are on separate lines
+    text = _fix_list_formatting(text)
+
     # Remove excessive newlines (keep max 2 consecutive newlines)
     text = re.sub(r'\n{3,}', '\n\n', text)
 
@@ -570,41 +609,70 @@ def synthesize_answer(question: str, contexts: List[str]) -> str:
     """
     Generate a refined answer using the provided contexts.
     The answer is cleaned to remove unwanted symbols and formatting artifacts.
-    Enhanced with chatbot-friendly formatting instructions.
+    Enhanced with chatbot-friendly formatting instructions and strict list formatting rules.
     """
-    # Enhanced system prompt for chatbot-friendly responses
+    # Enhanced system prompt with strict list formatting instructions
     system_prompt = """You are a helpful AI assistant in a chatbot interface. Provide clear, accurate answers.
 
-FORMATTING RULES:
+CRITICAL: LIST FORMATTING RULES
+BEFORE generating your answer, analyze whether the question expects a list response:
+- Questions containing: "list", "what are", "which", "give me", "show me", "tell me about all", "enumerate", "name"
+- Questions asking for multiple items, options, features, benefits, steps, or categories
+- Questions from website content that contain structured data (navigation menus, product lists, feature lists, pricing tiers, etc.)
+
+IF THE ANSWER SHOULD BE A LIST (MANDATORY):
+1. ALWAYS format your response as a proper list - NO exceptions
+2. Use bullet points (•) or numbered format (1., 2., 3.)
+3. Put EACH item on a NEW LINE
+4. DO NOT write items in a paragraph format separated by commas or "and"
+5. Even if the context has the data in paragraph form, YOU MUST restructure it as a list
+6. Each list item should be clear and concise
+
+CORRECT LIST FORMAT (each item MUST be on its own line with a line break):
+Introduction text:
+• First item
+• Second item
+• Third item
+
+OR
+
+Introduction text:
+1. First item
+2. Second item
+3. Third item
+
+CRITICAL: Each bullet point or numbered item MUST start on a NEW LINE. Press ENTER/RETURN after each item.
+
+WRONG (DO NOT DO THIS):
+"The items are: item one, item two, and item three."
+"The options include item one, item two, and item three."
+"The items are: • item one • item two • item three" (NO - each must be on separate line!)
+
+GENERAL FORMATTING RULES:
 1. Use natural, conversational language suitable for chat
 2. Never use markdown symbols like **, __, ~~, or ` unless absolutely necessary
 3. Avoid unnecessary special characters, emojis, or decorative symbols
 4. Keep responses clean and easy to read in a chat window
 5. Use proper sentence structure with correct punctuation
 
-WHEN LISTS ARE EXPECTED:
-- If the question asks for a list (e.g., "list all", "what are the", "give me the"), format as a clear numbered or bulleted list
-- Use simple bullet points (•) or numbers (1., 2., 3.)
-- Each item should be on a new line
-- Keep list items concise and scannable
-- Example format:
-  • Item one
-  • Item two
-  • Item three
-
 RESPONSE STYLE:
 - Be direct and precise
 - Avoid verbose introductions like "Based on the context provided..."
 - For factual questions, give factual answers directly
-- For list questions, give list answers
+- For list questions, ALWAYS give list answers in proper list format
+- If the context contains list data (especially from website scrapes), preserve that structure
 - Answer based on the context provided
 - If information is clearly missing from the context, politely say you don't have that information
 
-Remember: You are chatting with a user, not writing a formal document."""
+SPECIAL NOTE FOR WEBSITE CONTENT:
+Website data often contains lists (menus, features, products, services, etc.) that may appear as continuous text in the context. YOU MUST recognize these patterns and format them as proper lists when answering.
+
+Remember: You are chatting with a user, not writing a formal document. When a list is expected, ALWAYS provide a properly formatted list."""
 
     user_prompt = (
         f"Question: {question}\n\n"
         "Context:\n" + "\n\n---\n".join(contexts[:12]) + "\n\n"
+        "IMPORTANT: Analyze if this question expects a list answer. If yes, format your response as a proper bulleted or numbered list with each item on a new line.\n\n"
         "Provide a clear, helpful answer based on the information in the context above."
     )
 
@@ -618,7 +686,13 @@ Remember: You are chatting with a user, not writing a formal document."""
     )
     raw_answer = chat.choices[0].message.content.strip()
 
+    print(f"DEBUG: RAW answer from LLM (first 200 chars): {raw_answer[:200]}")
+    print(f"DEBUG: RAW answer has {raw_answer.count(chr(10))} newlines")
+
     # Clean up the answer
     cleaned_answer = _clean_answer_text(raw_answer)
+
+    print(f"DEBUG: CLEANED answer (first 200 chars): {cleaned_answer[:200]}")
+    print(f"DEBUG: CLEANED answer has {cleaned_answer.count(chr(10))} newlines")
 
     return cleaned_answer
