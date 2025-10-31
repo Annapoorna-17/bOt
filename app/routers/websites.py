@@ -1,6 +1,6 @@
 # app/routers/websites.py
 import hashlib
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -8,6 +8,7 @@ from ..db import get_db
 from ..models import Website
 from ..schemas import WebsiteSubmit, WebsiteResponse, WebsiteOut
 from ..auth import get_current_user
+from ..security import require_superadmin
 from ..scraper import scrape_and_index_website
 from .. import models
 
@@ -95,7 +96,26 @@ def list_websites(
     if my_websites_only or current_user.role not in ["admin", "superadmin"]:
         query = query.filter(Website.uploader_id == current_user.id)
 
-    return query.order_by(Website.created_at.desc()).all()
+    websites = query.order_by(Website.created_at.desc()).all()
+
+    # Add company name to each website
+    result = []
+    for website in websites:
+        website_dict = {
+            "id": website.id,
+            "url": website.url,
+            "title": website.title,
+            "uploader_id": website.uploader_id,
+            "user_code": website.user_code,
+            "company_name": website.uploader.company.name if website.uploader and website.uploader.company else None,
+            "num_chunks": website.num_chunks,
+            "status": website.status,
+            "created_at": website.created_at,
+            "error_message": website.error_message
+        }
+        result.append(website_dict)
+
+    return result
 
 
 @router.delete("/{website_id}")
@@ -135,3 +155,44 @@ def delete_website(
     db.commit()
 
     return {"message": "Website deleted successfully", "website_id": website_id}
+
+
+@router.get("/superadmin/all", response_model=List[WebsiteOut], dependencies=[Depends(require_superadmin)])
+def list_all_websites_superadmin(
+    db: Session = Depends(get_db),
+    company_name: Optional[str] = None,
+):
+    """
+    List all websites across all companies. Superadmin only.
+
+    Query Parameters:
+    - company_name: Optional filter to show websites from a specific company
+    """
+    query = db.query(Website)
+
+    # Filter by company name if provided
+    if company_name:
+        query = query.join(Website.uploader).join(models.User.company).filter(
+            models.Company.name.ilike(f"%{company_name}%")
+        )
+
+    websites = query.order_by(Website.created_at.desc()).all()
+
+    # Build response with company name
+    result = []
+    for website in websites:
+        website_dict = {
+            "id": website.id,
+            "url": website.url,
+            "title": website.title,
+            "uploader_id": website.uploader_id,
+            "user_code": website.user_code,
+            "company_name": website.uploader.company.name if website.uploader and website.uploader.company else None,
+            "num_chunks": website.num_chunks,
+            "status": website.status,
+            "created_at": website.created_at,
+            "error_message": website.error_message
+        }
+        result.append(website_dict)
+
+    return result

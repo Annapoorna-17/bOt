@@ -7,9 +7,10 @@ from ..db import get_db
 from ..models import Document # We get the User model from 'models'
 from .. import models          # <--- 1. Import 'models'
 from ..schemas import UploadResponse, DocumentOut
-from typing import List
+from typing import List, Optional
 from ..rag import document_to_pinecone
 from ..auth import get_current_user  # <--- 2. Import your new auth function
+from ..security import require_superadmin  # Import superadmin auth
 
 # --- 3. REMOVED old auth imports (require_caller, require_admin, Caller) ---
 
@@ -106,7 +107,7 @@ def list_documents(
 
     documents = query.order_by(Document.created_at.desc()).all()
 
-    # Add filepath to each document
+    # Add filepath and company name to each document
     result = []
     for doc in documents:
         doc_dict = {
@@ -116,6 +117,7 @@ def list_documents(
             "filepath": os.path.join(UPLOAD_DIR, doc.filename),
             "uploader_id": doc.uploader_id,
             "user_code": doc.user_code,
+            "company_name": doc.uploader.company.name if doc.uploader and doc.uploader.company else None,
             "num_chunks": doc.num_chunks,
             "status": doc.status,
             "created_at": doc.created_at,
@@ -169,3 +171,45 @@ def delete_document(
     db.commit()
 
     return {"message": "Document deleted successfully", "document_id": document_id}
+
+
+@router.get("/superadmin/all", response_model=List[DocumentOut], dependencies=[Depends(require_superadmin)])
+def list_all_documents_superadmin(
+    db: Session = Depends(get_db),
+    company_name: Optional[str] = None,
+):
+    """
+    List all documents across all companies. Superadmin only.
+
+    Query Parameters:
+    - company_name: Optional filter to show documents from a specific company
+    """
+    query = db.query(Document)
+
+    # Filter by company name if provided
+    if company_name:
+        query = query.join(Document.uploader).join(models.User.company).filter(
+            models.Company.name.ilike(f"%{company_name}%")
+        )
+
+    documents = query.order_by(Document.created_at.desc()).all()
+
+    # Build response with company name
+    result = []
+    for doc in documents:
+        doc_dict = {
+            "id": doc.id,
+            "filename": doc.filename,
+            "original_name": doc.original_name,
+            "filepath": os.path.join(UPLOAD_DIR, doc.filename),
+            "uploader_id": doc.uploader_id,
+            "user_code": doc.user_code,
+            "company_name": doc.uploader.company.name if doc.uploader and doc.uploader.company else None,
+            "num_chunks": doc.num_chunks,
+            "status": doc.status,
+            "created_at": doc.created_at,
+            "error_message": doc.error_message
+        }
+        result.append(doc_dict)
+
+    return result

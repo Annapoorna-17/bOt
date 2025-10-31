@@ -64,6 +64,207 @@ def list_companies(db: Session = Depends(get_db)):
     return companies
 
 
+@router.get("/admins", response_model=list[UserOut], dependencies=[Depends(require_superadmin)])
+def list_all_company_admins(db: Session = Depends(get_db)):
+    """
+    List all admin users across all companies with their company names.
+    Superadmin only.
+    """
+    admins = db.query(User).filter(User.role.in_(["admin", "superadmin"])).order_by(User.created_at.desc()).all()
+
+    # Add company_name to each admin
+    result = []
+    for admin in admins:
+        admin_dict = {
+            "id": admin.id,
+            "display_name": admin.display_name,
+            "user_code": admin.user_code,
+            "role": admin.role,
+            "api_key": admin.api_key,
+            # Convert empty string to None for proper validation
+            "firstname": admin.firstname,
+            "lastname": admin.lastname,
+            "email": admin.email if admin.email else None,
+            "contact_number": admin.contact_number,
+            "profile_image": admin.profile_image,
+            "company_name": admin.company.name if admin.company else None,
+            "address": admin.address,
+            "city": admin.city,
+            "state": admin.state,
+            "country": admin.country
+        }
+        result.append(admin_dict)
+
+    return result
+
+
+@router.get("/admins/{admin_id}", response_model=UserOut, dependencies=[Depends(require_superadmin)])
+def get_admin_by_id(
+    admin_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get a specific admin user by ID.
+    Superadmin only.
+    """
+    admin = db.query(User).filter(
+        User.id == admin_id,
+        User.role.in_(["admin", "superadmin"])
+    ).first()
+
+    if not admin:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Admin with ID {admin_id} not found"
+        )
+
+    # Add company_name to response
+    admin_dict = {
+        "id": admin.id,
+        "display_name": admin.display_name,
+        "user_code": admin.user_code,
+        "role": admin.role,
+        "api_key": admin.api_key,
+        "firstname": admin.firstname,
+        "lastname": admin.lastname,
+        "email": admin.email if admin.email else None,
+        "contact_number": admin.contact_number,
+        "profile_image": admin.profile_image,
+        "company_name": admin.company.name if admin.company else None,
+        "address": admin.address,
+        "city": admin.city,
+        "state": admin.state,
+        "country": admin.country,
+        "is_active": admin.is_active
+    }
+
+    return admin_dict
+
+
+@router.put("/admins/{admin_id}", response_model=UserOut, dependencies=[Depends(require_superadmin)])
+def update_admin(
+    admin_id: int,
+    payload: AdminUserUpdate,
+    db: Session = Depends(get_db)
+):
+    """
+    Update an admin user's information.
+    Superadmin only.
+
+    Allows updating: display_name, role (between admin/superadmin), email,
+    contact info, and is_active status.
+    """
+    admin = db.query(User).filter(
+        User.id == admin_id,
+        User.role.in_(["admin", "superadmin"])
+    ).first()
+
+    if not admin:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Admin with ID {admin_id} not found"
+        )
+
+    # Prevent demoting the last superadmin
+    if admin.role == "superadmin" and payload.role and payload.role != "superadmin":
+        superadmin_count = db.query(User).filter(User.role == "superadmin").count()
+        if superadmin_count <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot demote the last superadmin user"
+            )
+
+    # Check if email is being changed and if it's already taken
+    if payload.email and payload.email != admin.email:
+        existing = db.query(User).filter(
+            User.email == payload.email,
+            User.id != admin_id
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Email already in use by another user"
+            )
+
+    # Update fields if provided
+    update_data = payload.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        if hasattr(admin, key):
+            setattr(admin, key, value)
+
+    db.commit()
+    db.refresh(admin)
+
+    # Add company_name to response
+    admin_dict = {
+        "id": admin.id,
+        "display_name": admin.display_name,
+        "user_code": admin.user_code,
+        "role": admin.role,
+        "api_key": admin.api_key,
+        "firstname": admin.firstname,
+        "lastname": admin.lastname,
+        "email": admin.email if admin.email else None,
+        "contact_number": admin.contact_number,
+        "profile_image": admin.profile_image,
+        "company_name": admin.company.name if admin.company else None,
+        "address": admin.address,
+        "city": admin.city,
+        "state": admin.state,
+        "country": admin.country,
+        "is_active": admin.is_active
+    }
+
+    return admin_dict
+
+
+@router.delete("/admins/{admin_id}", dependencies=[Depends(require_superadmin)])
+def delete_admin(
+    admin_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Delete an admin user.
+    Superadmin only.
+
+    WARNING: This will also delete all documents and websites uploaded by this admin.
+    """
+    admin = db.query(User).filter(
+        User.id == admin_id,
+        User.role.in_(["admin", "superadmin"])
+    ).first()
+
+    if not admin:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Admin with ID {admin_id} not found"
+        )
+
+    # Prevent deleting the last superadmin
+    if admin.role == "superadmin":
+        superadmin_count = db.query(User).filter(User.role == "superadmin").count()
+        if superadmin_count <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot delete the last superadmin user"
+            )
+
+    # Store admin info for response
+    admin_user_code = admin.user_code
+    admin_company = admin.company.name if admin.company else None
+
+    # Delete the admin (cascade should handle related records)
+    db.delete(admin)
+    db.commit()
+
+    return {
+        "message": f"Admin user '{admin_user_code}' deleted successfully",
+        "admin_id": admin_id,
+        "user_code": admin_user_code,
+        "company": admin_company
+    }
+
+
 @router.get("/{tenant_code}", response_model=CompanyOut, dependencies=[Depends(require_superadmin)])
 def get_company(
     tenant_code: str,
@@ -165,40 +366,6 @@ def delete_company(
         "tenant_code": tenant_code,
         "users_deleted": user_count
     }
-
-
-@router.get("/admins", response_model=list[UserOut], dependencies=[Depends(require_superadmin)])
-def list_all_company_admins(db: Session = Depends(get_db)):
-    """
-    List all admin users across all companies with their company names.
-    Superadmin only.
-    """
-    admins = db.query(User).filter(User.role.in_(["admin", "superadmin"])).order_by(User.created_at.desc()).all()
-
-    # Add company_name to each admin
-    result = []
-    for admin in admins:
-        admin_dict = {
-            "id": admin.id,
-            "display_name": admin.display_name,
-            "user_code": admin.user_code,
-            "role": admin.role,
-            "api_key": admin.api_key,
-            # Convert empty string to None for proper validation
-            "firstname": admin.firstname,
-            "lastname": admin.lastname,
-            "email": admin.email if admin.email else None,
-            "contact_number": admin.contact_number,
-            "profile_image": admin.profile_image,
-            "company_name": admin.company.name if admin.company else None,
-            "address": admin.address,
-            "city": admin.city,
-            "state": admin.state,
-            "country": admin.country
-        }
-        result.append(admin_dict)
-
-    return result
 
 
 @router.post("/{tenant_code}/admin", response_model=UserOut, dependencies=[Depends(require_superadmin)])
@@ -369,172 +536,3 @@ def create_superadmin_user(
     db.refresh(user)
 
     return user
-
-
-# ============ Admin CRUD Endpoints ============
-
-@router.get("/admins/{admin_id}", response_model=UserOut, dependencies=[Depends(require_superadmin)])
-def get_admin_by_id(
-    admin_id: int,
-    db: Session = Depends(get_db)
-):
-    """
-    Get a specific admin user by ID.
-    Superadmin only.
-    """
-    admin = db.query(User).filter(
-        User.id == admin_id,
-        User.role.in_(["admin", "superadmin"])
-    ).first()
-
-    if not admin:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Admin with ID {admin_id} not found"
-        )
-
-    # Add company_name to response
-    admin_dict = {
-        "id": admin.id,
-        "display_name": admin.display_name,
-        "user_code": admin.user_code,
-        "role": admin.role,
-        "api_key": admin.api_key,
-        "firstname": admin.firstname,
-        "lastname": admin.lastname,
-        "email": admin.email if admin.email else None,
-        "contact_number": admin.contact_number,
-        "profile_image": admin.profile_image,
-        "company_name": admin.company.name if admin.company else None,
-        "address": admin.address,
-        "city": admin.city,
-        "state": admin.state,
-        "country": admin.country,
-        "is_active": admin.is_active
-    }
-
-    return admin_dict
-
-
-@router.put("/admins/{admin_id}", response_model=UserOut, dependencies=[Depends(require_superadmin)])
-def update_admin(
-    admin_id: int,
-    payload: AdminUserUpdate,
-    db: Session = Depends(get_db)
-):
-    """
-    Update an admin user's information.
-    Superadmin only.
-
-    Allows updating: display_name, role (between admin/superadmin), email,
-    contact info, and is_active status.
-    """
-    admin = db.query(User).filter(
-        User.id == admin_id,
-        User.role.in_(["admin", "superadmin"])
-    ).first()
-
-    if not admin:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Admin with ID {admin_id} not found"
-        )
-
-    # Prevent demoting the last superadmin
-    if admin.role == "superadmin" and payload.role and payload.role != "superadmin":
-        superadmin_count = db.query(User).filter(User.role == "superadmin").count()
-        if superadmin_count <= 1:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot demote the last superadmin user"
-            )
-
-    # Check if email is being changed and if it's already taken
-    if payload.email and payload.email != admin.email:
-        existing = db.query(User).filter(
-            User.email == payload.email,
-            User.id != admin_id
-        ).first()
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Email already in use by another user"
-            )
-
-    # Update fields if provided
-    update_data = payload.dict(exclude_unset=True)
-    for key, value in update_data.items():
-        if hasattr(admin, key):
-            setattr(admin, key, value)
-
-    db.commit()
-    db.refresh(admin)
-
-    # Add company_name to response
-    admin_dict = {
-        "id": admin.id,
-        "display_name": admin.display_name,
-        "user_code": admin.user_code,
-        "role": admin.role,
-        "api_key": admin.api_key,
-        "firstname": admin.firstname,
-        "lastname": admin.lastname,
-        "email": admin.email if admin.email else None,
-        "contact_number": admin.contact_number,
-        "profile_image": admin.profile_image,
-        "company_name": admin.company.name if admin.company else None,
-        "address": admin.address,
-        "city": admin.city,
-        "state": admin.state,
-        "country": admin.country,
-        "is_active": admin.is_active
-    }
-
-    return admin_dict
-
-
-@router.delete("/admins/{admin_id}", dependencies=[Depends(require_superadmin)])
-def delete_admin(
-    admin_id: int,
-    db: Session = Depends(get_db)
-):
-    """
-    Delete an admin user.
-    Superadmin only.
-
-    WARNING: This will also delete all documents and websites uploaded by this admin.
-    """
-    admin = db.query(User).filter(
-        User.id == admin_id,
-        User.role.in_(["admin", "superadmin"])
-    ).first()
-
-    if not admin:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Admin with ID {admin_id} not found"
-        )
-
-    # Prevent deleting the last superadmin
-    if admin.role == "superadmin":
-        superadmin_count = db.query(User).filter(User.role == "superadmin").count()
-        if superadmin_count <= 1:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot delete the last superadmin user"
-            )
-
-    # Store admin info for response
-    admin_user_code = admin.user_code
-    admin_company = admin.company.name if admin.company else None
-
-    # Delete the admin (cascade should handle related records)
-    db.delete(admin)
-    db.commit()
-
-    return {
-        "message": f"Admin user '{admin_user_code}' deleted successfully",
-        "admin_id": admin_id,
-        "user_code": admin_user_code,
-        "company": admin_company
-    }

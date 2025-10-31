@@ -1,10 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.main import app; print(''App initialized successfully''); print(''Routes available:'', len([r for r in app.routes]))\")",
-      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.main import app; routes = [r for r in app.routes if hasattr(r, ''path'')]; key_routes = [r.path for r in routes if any(x in r.path for x in [''/documents'', ''/websites'', ''/query'', ''/users'', ''/companies''])]; print(''Key endpoints still available:''); [print(f''  {r}'') for r in sorted(set(key_routes))]\")",
-      "Bash(mkdir:*)",
-      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.schemas import CompanyOut; import inspect; fields = CompanyOut.model_fields; print(''CompanyOut fields:''); [print(f''  - {field}: {info.annotation}'') for field, info in fields.items()]\")"
+      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.main import app; print(''App initialized successfully''); print(''Total routes:'', len([r for r in app.routes]))\")",
+      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.main import app; routes = [r for r in app.routes if hasattr(r, ''path'') and ''superadmin'' in r.path and (''documents'' in r.path or ''websites'' in r.path)]; print(''New superadmin routes:''); [print(f''  {r.methods} {r.path}'') for r in sorted(routes, key=lambda x: x.path)]\")",
+      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.main import app; from fastapi.testclient import TestClient; client = TestClient(app); response = client.get(''/documents/superadmin/all'', headers={''Authorization'': ''Bearer B946C6F2747914D24C1F6C74F5AB5291''}); print(f''Documents endpoint status: {response.status_code}''); print(f''Response type: {type(response.json())}'')\")"
     ],
     "deny": [],
     "ask": []
