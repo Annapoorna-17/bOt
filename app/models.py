@@ -12,7 +12,7 @@ class Company(Base):
     widget_key = Column(String(128), unique=True, nullable=True)  # public key for embeddable widget
 
     email = Column(String(255), nullable=True)
-    phone = Column(String(50), nullable=True)
+    phone = Column(String(50), nullable=True) 
     website = Column(String(255), nullable=True)
     address = Column(String(255), nullable=True)
     city = Column(String(100), nullable=True)
@@ -21,15 +21,14 @@ class Company(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # Cascade delete: when a company is deleted, all related users, documents, and websites are also deleted
-    users = relationship("User", back_populates="company", cascade="all, delete-orphan")
-    documents = relationship("Document", back_populates="company", cascade="all, delete-orphan")
-    websites = relationship("Website", back_populates="company", cascade="all, delete-orphan")
+    users = relationship("User", back_populates="company")
+    documents = relationship("Document", back_populates="company")
+    websites = relationship("Website", back_populates="company")
 
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True)
-    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False)
     display_name = Column(String(255), nullable=False)
     user_code = Column(String(64), unique=True, index=True, nullable=False)  # e.g., qwert-uds1
     role = Column(String(32), nullable=False)  # "superadmin", "admin", or "user"
@@ -56,14 +55,14 @@ class User(Base):
 
 
     company = relationship("Company", back_populates="users")
-    documents = relationship("Document", back_populates="uploader", cascade="all, delete-orphan")
-    websites = relationship("Website", back_populates="uploader", cascade="all, delete-orphan")
+    documents = relationship("Document", back_populates="uploader")
+    websites = relationship("Website", back_populates="uploader")
 
 class Document(Base):
     __tablename__ = "documents"
     id = Column(Integer, primary_key=True)
-    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
-    uploader_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False)
+    uploader_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     tenant_code = Column(String(64), index=True, nullable=False)
     user_code = Column(String(64), index=True, nullable=False)
     filename = Column(String(512), nullable=False)  # stored file name e.g., qwert_uds1.pdf
@@ -84,8 +83,8 @@ class Document(Base):
 class Website(Base):
     __tablename__ = "websites"
     id = Column(Integer, primary_key=True)
-    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
-    uploader_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False)
+    uploader_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     tenant_code = Column(String(64), index=True, nullable=False)
     user_code = Column(String(64), index=True, nullable=False)
     url = Column(String(2048), nullable=False)  # original URL
