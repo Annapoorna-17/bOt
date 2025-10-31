@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.main import app; print(''App initialized successfully''); print(''Total routes:'', len([r for r in app.routes]))\")"
+      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.main import app; print(''App initialized successfully''); print(''Total routes:'', len([r for r in app.routes]))\")",
+      "Bash(dir \"W:\\bOt\\uploaded_documents\" 2)",
+      "Bash(nul)"
     ],
     "deny": [],
     "ask": []

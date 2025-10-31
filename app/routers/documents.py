@@ -15,8 +15,11 @@ from ..security import require_superadmin  # Import superadmin auth
 
 # --- 3. REMOVED old auth imports (require_caller, require_admin, Caller) ---
 
-UPLOAD_DIR = "uploaded_documents"
+# Use absolute path for uploaded documents
+UPLOAD_DIR = os.path.abspath("uploaded_documents")
+UPLOAD_DIR_PDFS = os.path.abspath("uploaded_pdfs")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(UPLOAD_DIR_PDFS, exist_ok=True)
 
 # Supported file extensions
 SUPPORTED_EXTENSIONS = {
@@ -26,6 +29,25 @@ SUPPORTED_EXTENSIONS = {
 }
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
+
+
+def get_document_path(filename: str) -> str:
+    """
+    Find the document file path by checking both upload directories.
+    Returns the absolute path if found, None otherwise.
+    """
+    # Check uploaded_documents directory first
+    path = os.path.join(UPLOAD_DIR, filename)
+    if os.path.exists(path):
+        return path
+
+    # Check uploaded_pdfs directory for PDFs
+    path_pdf = os.path.join(UPLOAD_DIR_PDFS, filename)
+    if os.path.exists(path_pdf):
+        return path_pdf
+
+    # File not found in either directory
+    return None
 
 @router.post("/upload", response_model=UploadResponse)
 def upload_document(
@@ -111,11 +133,13 @@ def list_documents(
     # Add filepath, user name, and company name to each document
     result = []
     for doc in documents:
+        # Get the actual file path (checks both directories)
+        actual_path = get_document_path(doc.filename)
         doc_dict = {
             "id": doc.id,
             "filename": doc.filename,
             "original_name": doc.original_name,
-            "filepath": os.path.join(UPLOAD_DIR, doc.filename),
+            "filepath": actual_path if actual_path else os.path.join(UPLOAD_DIR, doc.filename),
             "uploader_id": doc.uploader_id,
             "user_code": doc.user_code,
             "user_name": doc.uploader.display_name if doc.uploader else None,
@@ -159,9 +183,9 @@ def delete_document(
             detail="Access denied: You can only delete your own documents unless you are an admin"
         )
 
-    # Delete the physical file
-    file_path = os.path.join(UPLOAD_DIR, doc.filename)
-    if os.path.exists(file_path):
+    # Delete the physical file (check both directories)
+    file_path = get_document_path(doc.filename)
+    if file_path and os.path.exists(file_path):
         try:
             os.remove(file_path)
         except Exception as e:
@@ -197,14 +221,22 @@ def preview_document(
             detail="Access denied: This document belongs to a different tenant"
         )
 
-    # Build file path
-    file_path = os.path.join(UPLOAD_DIR, doc.filename)
+    # Find the file in the correct directory
+    file_path = get_document_path(doc.filename)
+
+    # Debug logging
+    print(f"DEBUG - Preview request (normal user):")
+    print(f"  Document ID: {document_id}")
+    print(f"  Filename: {doc.filename}")
+    print(f"  UPLOAD_DIR: {UPLOAD_DIR}")
+    print(f"  UPLOAD_DIR_PDFS: {UPLOAD_DIR_PDFS}")
+    print(f"  Found path: {file_path}")
 
     # Check if file exists
-    if not os.path.exists(file_path):
+    if not file_path:
         raise HTTPException(
             status_code=404,
-            detail="Document file not found on server"
+            detail=f"Document file not found on server. Checked both uploaded_documents and uploaded_pdfs directories."
         )
 
     # Return file for preview/download
@@ -239,11 +271,13 @@ def list_all_documents_superadmin(
     # Build response with user name and company name
     result = []
     for doc in documents:
+        # Get the actual file path (checks both directories)
+        actual_path = get_document_path(doc.filename)
         doc_dict = {
             "id": doc.id,
             "filename": doc.filename,
             "original_name": doc.original_name,
-            "filepath": os.path.join(UPLOAD_DIR, doc.filename),
+            "filepath": actual_path if actual_path else os.path.join(UPLOAD_DIR, doc.filename),
             "uploader_id": doc.uploader_id,
             "user_code": doc.user_code,
             "user_name": doc.uploader.display_name if doc.uploader else None,
@@ -272,14 +306,22 @@ def preview_document_superadmin(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    # Build file path
-    file_path = os.path.join(UPLOAD_DIR, doc.filename)
+    # Find the file in the correct directory
+    file_path = get_document_path(doc.filename)
+
+    # Debug logging
+    print(f"DEBUG - Preview request (superadmin):")
+    print(f"  Document ID: {document_id}")
+    print(f"  Filename: {doc.filename}")
+    print(f"  UPLOAD_DIR: {UPLOAD_DIR}")
+    print(f"  UPLOAD_DIR_PDFS: {UPLOAD_DIR_PDFS}")
+    print(f"  Found path: {file_path}")
 
     # Check if file exists
-    if not os.path.exists(file_path):
+    if not file_path:
         raise HTTPException(
             status_code=404,
-            detail="Document file not found on server"
+            detail=f"Document file not found on server. Checked both uploaded_documents and uploaded_pdfs directories."
         )
 
     # Return file for preview/download
