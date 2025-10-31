@@ -177,20 +177,20 @@ def delete_document(
 @router.get("/superadmin/all", response_model=List[DocumentOut], dependencies=[Depends(require_superadmin)])
 def list_all_documents_superadmin(
     db: Session = Depends(get_db),
-    company_name: Optional[str] = None,
+    tenant_code: Optional[str] = None,
 ):
     """
     List all documents across all companies. Superadmin only.
 
     Query Parameters:
-    - company_name: Optional filter to show documents from a specific company
+    - tenant_code: Optional filter to show documents from a specific company by tenant code
     """
     query = db.query(Document)
 
-    # Filter by company name if provided
-    if company_name:
+    # Filter by tenant code if provided
+    if tenant_code:
         query = query.join(Document.uploader).join(models.User.company).filter(
-            models.Company.name.ilike(f"%{company_name}%")
+            models.Company.tenant_code == tenant_code
         )
 
     documents = query.order_by(Document.created_at.desc()).all()
