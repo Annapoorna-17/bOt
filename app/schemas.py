@@ -201,6 +201,7 @@ class QueryRequest(BaseModel):
     top_k: int = 8
     user_filter: bool = False  # if True, filter by uploader user_code too
     source_type: str = "all"  # "all", "documents", or "websites" - filter by source type
+    min_score: float = 0.3  # Minimum similarity score (0.0-1.0). Results below this are filtered out as irrelevant
 
 class QueryAnswer(BaseModel):
     answer: str

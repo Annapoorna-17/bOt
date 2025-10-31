@@ -456,7 +456,7 @@ def pdf_to_pinecone(file_path: str, tenant_code: str, user_code: str, stored_fil
     """Backward compatibility wrapper for document_to_pinecone."""
     return document_to_pinecone(file_path, tenant_code, user_code, stored_filename)
 
-def search(tenant_code: str, query: str, top_k: int = 8, filter_user_code: str | None = None, source_type: str = "all"):
+def search(tenant_code: str, query: str, top_k: int = 8, filter_user_code: str | None = None, source_type: str = "all", min_score: float = 0.3):
     """
     Search for relevant content in Pinecone.
 
@@ -466,6 +466,8 @@ def search(tenant_code: str, query: str, top_k: int = 8, filter_user_code: str |
         top_k: Number of results to return
         filter_user_code: Optional user filter
         source_type: Filter by source type - "all", "documents", or "websites"
+        min_score: Minimum similarity score threshold (default: 0.3, range: 0.0-1.0)
+                  Results below this score are considered irrelevant and filtered out
     """
     q_emb = oai.embeddings.create(model=EMBED_MODEL, input=[query]).data[0].embedding
 
@@ -494,18 +496,69 @@ def search(tenant_code: str, query: str, top_k: int = 8, filter_user_code: str |
     )
 
     matches = res.matches or []
-    print(f"DEBUG: Found {len(matches)} matches")
+    print(f"DEBUG: Found {len(matches)} matches in namespace '{tenant_code}'")
 
-    # Debug: Show what sources were found
+    # === RELEVANCE FILTERING ===
+    # Filter out low-quality matches based on similarity score
+    if matches and min_score > 0:
+        original_count = len(matches)
+        matches = [m for m in matches if (hasattr(m, 'score') and m.score >= min_score)]
+        filtered_count = original_count - len(matches)
+        if filtered_count > 0:
+            print(f"🎯 RELEVANCE FILTER: Removed {filtered_count} low-quality results (score < {min_score})")
+            print(f"   Remaining results: {len(matches)}")
+
+    # === TENANT ISOLATION VALIDATION ===
+    # Check if any results belong to a different tenant (should NEVER happen!)
+    tenant_violations = []
     if matches:
-        for i, m in enumerate(matches[:5]):  # Show first 5
+        print("\n🔍 RESULTS ANALYSIS:")
+        for i, m in enumerate(matches[:10]):  # Show first 10
+            result_tenant = m.metadata.get("tenant_code", "MISSING")
+            result_user = m.metadata.get("user_code", "MISSING")
             source_type_found = m.metadata.get("source_type", "unknown")
+
             if source_type_found == "website":
                 source_name = m.metadata.get("url", "unknown")
             else:
                 source_name = m.metadata.get("doc", "unknown")
+
             score = m.score if hasattr(m, 'score') else 'N/A'
-            print(f"DEBUG: Match {i+1}: {source_type_found} - {source_name} (score: {score})")
+
+            # Check for tenant isolation violation
+            if result_tenant != tenant_code:
+                tenant_violations.append({
+                    "match_index": i+1,
+                    "expected_tenant": tenant_code,
+                    "found_tenant": result_tenant,
+                    "source": source_name
+                })
+                print(f"  ⚠️  Match {i+1}: TENANT MISMATCH! Expected '{tenant_code}', got '{result_tenant}'")
+                print(f"       Source: {source_type_found} - {source_name} (score: {score})")
+                print(f"       User: {result_user}")
+            else:
+                print(f"  ✅ Match {i+1}: {source_type_found} - {source_name[:60]}")
+                print(f"       Tenant: {result_tenant}, User: {result_user}, Score: {score}")
+
+    # Alert if tenant isolation is violated
+    if tenant_violations:
+        print("\n" + "=" * 80)
+        print("🚨 CRITICAL: TENANT ISOLATION VIOLATION DETECTED!")
+        print(f"   Querying tenant: {tenant_code}")
+        print(f"   Number of violations: {len(tenant_violations)}")
+        print(f"   This means cross-tenant data is being returned!")
+        print("   Violations:")
+        for v in tenant_violations:
+            print(f"     - Match #{v['match_index']}: Expected '{v['expected_tenant']}', got '{v['found_tenant']}'")
+            print(f"       Source: {v['source']}")
+        print("=" * 80 + "\n")
+
+        # === DEFENSE IN DEPTH: Filter out cross-tenant results ===
+        print("🛡️  APPLYING DEFENSE IN DEPTH: Filtering out cross-tenant results...")
+        filtered_matches = [m for m in matches if m.metadata.get("tenant_code") == tenant_code]
+        print(f"   Removed {len(matches) - len(filtered_matches)} cross-tenant results")
+        print(f"   Returning {len(filtered_matches)} valid results for tenant '{tenant_code}'")
+        return filtered_matches
 
     return matches
 

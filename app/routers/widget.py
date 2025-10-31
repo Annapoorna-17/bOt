@@ -99,12 +99,13 @@ def widget_query(
         query=payload.question,
         top_k=payload.top_k,
         filter_user_code=None,  # Widget searches all company data
-        source_type=payload.source_type
+        source_type=payload.source_type,
+        min_score=payload.min_score
     )
 
     if not matches:
         return QueryAnswer(
-            answer="I don't have enough information to answer that question.",
+            answer="I don't have enough information to answer that question. The available content may not be relevant to your query.",
             sources=[]
         )
 
@@ -146,12 +147,13 @@ def superadmin_company_query(
         query=payload.question,
         top_k=payload.top_k,
         filter_user_code=None,  # Super-admin searches all company data
-        source_type=payload.source_type
+        source_type=payload.source_type,
+        min_score=payload.min_score
     )
 
     if not matches:
         return QueryAnswer(
-            answer="I don't have enough information to answer that question.",
+            answer="I don't have enough information to answer that question. The available content may not be relevant to your query.",
             sources=[]
         )
 
