@@ -2,6 +2,7 @@ import os
 import uuid
 from datetime import datetime
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from ..db import get_db
 from ..models import Document # We get the User model from 'models'
@@ -174,6 +175,46 @@ def delete_document(
     return {"message": "Document deleted successfully", "document_id": document_id}
 
 
+@router.get("/{document_id}/preview")
+def preview_document(
+    document_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Preview/download a document.
+    Users can preview documents in their tenant. Admins can preview any document in their tenant.
+    """
+    doc = db.query(Document).filter(Document.id == document_id).first()
+
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # Check tenant isolation
+    if doc.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied: This document belongs to a different tenant"
+        )
+
+    # Build file path
+    file_path = os.path.join(UPLOAD_DIR, doc.filename)
+
+    # Check if file exists
+    if not os.path.exists(file_path):
+        raise HTTPException(
+            status_code=404,
+            detail="Document file not found on server"
+        )
+
+    # Return file for preview/download
+    return FileResponse(
+        path=file_path,
+        filename=doc.original_name,  # Use original filename for download
+        media_type="application/octet-stream"
+    )
+
+
 @router.get("/superadmin/all", response_model=List[DocumentOut], dependencies=[Depends(require_superadmin)])
 def list_all_documents_superadmin(
     db: Session = Depends(get_db),
@@ -215,3 +256,36 @@ def list_all_documents_superadmin(
         result.append(doc_dict)
 
     return result
+
+
+@router.get("/superadmin/{document_id}/preview", dependencies=[Depends(require_superadmin)])
+def preview_document_superadmin(
+    document_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Preview/download any document. Superadmin only.
+    Allows superadmin to preview documents from any company.
+    """
+    doc = db.query(Document).filter(Document.id == document_id).first()
+
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # Build file path
+    file_path = os.path.join(UPLOAD_DIR, doc.filename)
+
+    # Check if file exists
+    if not os.path.exists(file_path):
+        raise HTTPException(
+            status_code=404,
+            detail="Document file not found on server"
+        )
+
+    # Return file for preview/download
+    return FileResponse(
+        path=file_path,
+        filename=doc.original_name,  # Use original filename for download
+        media_type="application/octet-stream"
+    )
+
