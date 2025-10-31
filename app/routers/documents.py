@@ -1,7 +1,8 @@
-import os
+import os,mimetypes
 import uuid
 from datetime import datetime
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from ..db import get_db
 from ..models import Document # We get the User model from 'models'
@@ -14,8 +15,11 @@ from ..security import require_superadmin  # Import superadmin auth
 
 # --- 3. REMOVED old auth imports (require_caller, require_admin, Caller) ---
 
-UPLOAD_DIR = "uploaded_documents"
+# Use absolute path for uploaded documents
+UPLOAD_DIR = os.path.abspath("uploaded_documents")
+UPLOAD_DIR_PDFS = os.path.abspath("uploaded_pdfs")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(UPLOAD_DIR_PDFS, exist_ok=True)
 
 # Supported file extensions
 SUPPORTED_EXTENSIONS = {
@@ -25,6 +29,25 @@ SUPPORTED_EXTENSIONS = {
 }
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
+
+
+def get_document_path(filename: str) -> str:
+    """
+    Find the document file path by checking both upload directories.
+    Returns the absolute path if found, None otherwise.
+    """
+    # Check uploaded_documents directory first
+    path = os.path.join(UPLOAD_DIR, filename)
+    if os.path.exists(path):
+        return path
+
+    # Check uploaded_pdfs directory for PDFs
+    path_pdf = os.path.join(UPLOAD_DIR_PDFS, filename)
+    if os.path.exists(path_pdf):
+        return path_pdf
+
+    # File not found in either directory
+    return None
 
 @router.post("/upload", response_model=UploadResponse)
 def upload_document(
@@ -110,11 +133,13 @@ def list_documents(
     # Add filepath, user name, and company name to each document
     result = []
     for doc in documents:
+        # Get the actual file path (checks both directories)
+        actual_path = get_document_path(doc.filename)
         doc_dict = {
             "id": doc.id,
             "filename": doc.filename,
             "original_name": doc.original_name,
-            "filepath": os.path.join(UPLOAD_DIR, doc.filename),
+            "filepath": actual_path if actual_path else os.path.join(UPLOAD_DIR, doc.filename),
             "uploader_id": doc.uploader_id,
             "user_code": doc.user_code,
             "user_name": doc.uploader.display_name if doc.uploader else None,
@@ -158,9 +183,9 @@ def delete_document(
             detail="Access denied: You can only delete your own documents unless you are an admin"
         )
 
-    # Delete the physical file
-    file_path = os.path.join(UPLOAD_DIR, doc.filename)
-    if os.path.exists(file_path):
+    # Delete the physical file (check both directories)
+    file_path = get_document_path(doc.filename)
+    if file_path and os.path.exists(file_path):
         try:
             os.remove(file_path)
         except Exception as e:
@@ -172,6 +197,62 @@ def delete_document(
     db.commit()
 
     return {"message": "Document deleted successfully", "document_id": document_id}
+
+
+@router.get("/{document_id}/preview")
+def preview_document(
+    document_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Preview/download a document.
+    Users can preview documents in their tenant. Admins can preview any document in their tenant.
+    """
+    doc = db.query(Document).filter(Document.id == document_id).first()
+
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # Check tenant isolation
+    if doc.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied: This document belongs to a different tenant"
+        )
+
+    # Find the file in the correct directory
+    file_path = get_document_path(doc.filename)
+
+    mime_type, _ = mimetypes.guess_type(file_path)
+    if not mime_type:
+        mime_type = "application/octet-stream"
+
+    # Debug logging
+    print(f"DEBUG - Preview request (normal user):")
+    print(f"  Document ID: {document_id}")
+    print(f"  Filename: {doc.filename}")
+    print(f"  UPLOAD_DIR: {UPLOAD_DIR}")
+    print(f"  UPLOAD_DIR_PDFS: {UPLOAD_DIR_PDFS}")
+    print(f"  Found path: {file_path}")
+
+    # Check if file exists
+    if not file_path:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Document file not found on server. Checked both uploaded_documents and uploaded_pdfs directories."
+        )
+
+    # Return file for preview/download
+    return FileResponse(
+        path=file_path,
+        filename=doc.original_name,  # Use original filename for download
+        media_type=mime_type,
+        headers={
+            "Content-Disposition": f'inline; filename="{doc.original_name}"',  # 👈 allows preview
+            "Accept-Ranges": "bytes",  # allows partial loading
+        }
+    )
 
 
 @router.get("/superadmin/all", response_model=List[DocumentOut], dependencies=[Depends(require_superadmin)])
@@ -198,11 +279,13 @@ def list_all_documents_superadmin(
     # Build response with user name and company name
     result = []
     for doc in documents:
+        # Get the actual file path (checks both directories)
+        actual_path = get_document_path(doc.filename)
         doc_dict = {
             "id": doc.id,
             "filename": doc.filename,
             "original_name": doc.original_name,
-            "filepath": os.path.join(UPLOAD_DIR, doc.filename),
+            "filepath": actual_path if actual_path else os.path.join(UPLOAD_DIR, doc.filename),
             "uploader_id": doc.uploader_id,
             "user_code": doc.user_code,
             "user_name": doc.uploader.display_name if doc.uploader else None,
@@ -215,3 +298,53 @@ def list_all_documents_superadmin(
         result.append(doc_dict)
 
     return result
+
+
+@router.get("/superadmin/{document_id}/preview", dependencies=[Depends(require_superadmin)])
+def preview_document_superadmin(
+    document_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Preview/download any document. Superadmin only.
+    Allows superadmin to preview documents from any company.
+    """
+    doc = db.query(Document).filter(Document.id == document_id).first()
+
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # Find the file in the correct directory
+    file_path = get_document_path(doc.filename)
+
+    # Guess MIME type based on file extension
+    mime_type, _ = mimetypes.guess_type(file_path)
+    if not mime_type:
+        mime_type = "application/octet-stream"
+
+    # Debug logging
+    print(f"DEBUG - Preview request (superadmin):")
+    print(f"  Document ID: {document_id}")
+    print(f"  Filename: {doc.filename}")
+    print(f"  UPLOAD_DIR: {UPLOAD_DIR}")
+    print(f"  UPLOAD_DIR_PDFS: {UPLOAD_DIR_PDFS}")
+    print(f"  Found path: {file_path}")
+
+    # Check if file exists
+    if not file_path:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Document file not found on server. Checked both uploaded_documents and uploaded_pdfs directories."
+        )
+
+    # Return file for preview/download
+    return FileResponse(
+        path=file_path,
+        filename=doc.original_name,  # Use original filename for download
+        media_type=mime_type,
+        headers={
+            "Content-Disposition": f'inline; filename="{doc.original_name}"',  # 👈 allows preview
+            "Accept-Ranges": "bytes",  # allows partial loading
+        }
+    )
+

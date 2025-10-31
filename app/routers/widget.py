@@ -76,6 +76,7 @@ def widget_query(
     """
     Public endpoint for embeddable widget to query company data.
     Requires widget_key as a query parameter or header.
+    Sources are hidden from widget users for privacy.
     """
     # Find company by widget key
     company = db.query(Company).filter(Company.widget_key == widget_key).first()
@@ -109,18 +110,9 @@ def widget_query(
 
     contexts = [m.metadata.get("text", "") for m in matches if m.metadata]
 
-    # Handle both document and website sources
-    sources = []
-    for m in matches:
-        if m.metadata:
-            source_type = m.metadata.get("source_type", "document")
-            if source_type == "website":
-                sources.append(m.metadata.get("url", "unknown"))
-            else:
-                sources.append(m.metadata.get("doc", "unknown"))
-
+    # Widget query does not expose sources to users for privacy
     answer = synthesize_answer(payload.question, contexts)
-    return QueryAnswer(answer=answer, sources=sources[:payload.top_k])
+    return QueryAnswer(answer=answer, sources=[])
 
 
 @router.post("/superadmin/query/{tenant_code}", response_model=QueryAnswer, dependencies=[Depends(require_superadmin)])
