@@ -213,6 +213,7 @@ class DocumentOut(BaseModel):
     filepath: str  # Full path to the document file for download
     uploader_id: int
     user_code: str  # Added user_code field
+    user_name: Optional[str] = None  # Display name of the uploader
     company_name: Optional[str] = None  # Company name of the uploader
     num_chunks: int
     status: str
@@ -248,6 +249,7 @@ class WebsiteOut(BaseModel):
     title: Optional[str]
     uploader_id: int
     user_code: str  # Added user_code field
+    user_name: Optional[str] = None  # Display name of the uploader
     company_name: Optional[str] = None  # Company name of the uploader
     num_chunks: int
     status: str

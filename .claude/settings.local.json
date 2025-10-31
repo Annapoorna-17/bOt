@@ -1,9 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.main import app; print(''App initialized successfully''); print(''Total routes:'', len([r for r in app.routes]))\")",
-      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.main import app; routes = [r for r in app.routes if hasattr(r, ''path'') and ''superadmin'' in r.path and (''documents'' in r.path or ''websites'' in r.path)]; print(''New superadmin routes:''); [print(f''  {r.methods} {r.path}'') for r in sorted(routes, key=lambda x: x.path)]\")",
-      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.main import app; from fastapi.testclient import TestClient; client = TestClient(app); response = client.get(''/documents/superadmin/all'', headers={''Authorization'': ''Bearer B946C6F2747914D24C1F6C74F5AB5291''}); print(f''Documents endpoint status: {response.status_code}''); print(f''Response type: {type(response.json())}'')\")"
+      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.main import app; from fastapi.testclient import TestClient; client = TestClient(app); response = client.get(''/websites/superadmin/all'', headers={''Authorization'': ''Bearer B946C6F2747914D24C1F6C74F5AB5291''}); print(f''Superadmin websites status: {response.status_code}''); print(f''Response type: {type(response.json())}'')\")"
     ],
     "deny": [],
     "ask": []

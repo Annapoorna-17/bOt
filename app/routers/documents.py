@@ -107,7 +107,7 @@ def list_documents(
 
     documents = query.order_by(Document.created_at.desc()).all()
 
-    # Add filepath and company name to each document
+    # Add filepath, user name, and company name to each document
     result = []
     for doc in documents:
         doc_dict = {
@@ -117,6 +117,7 @@ def list_documents(
             "filepath": os.path.join(UPLOAD_DIR, doc.filename),
             "uploader_id": doc.uploader_id,
             "user_code": doc.user_code,
+            "user_name": doc.uploader.display_name if doc.uploader else None,
             "company_name": doc.uploader.company.name if doc.uploader and doc.uploader.company else None,
             "num_chunks": doc.num_chunks,
             "status": doc.status,
@@ -194,7 +195,7 @@ def list_all_documents_superadmin(
 
     documents = query.order_by(Document.created_at.desc()).all()
 
-    # Build response with company name
+    # Build response with user name and company name
     result = []
     for doc in documents:
         doc_dict = {
@@ -204,6 +205,7 @@ def list_all_documents_superadmin(
             "filepath": os.path.join(UPLOAD_DIR, doc.filename),
             "uploader_id": doc.uploader_id,
             "user_code": doc.user_code,
+            "user_name": doc.uploader.display_name if doc.uploader else None,
             "company_name": doc.uploader.company.name if doc.uploader and doc.uploader.company else None,
             "num_chunks": doc.num_chunks,
             "status": doc.status,

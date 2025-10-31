@@ -98,7 +98,7 @@ def list_websites(
 
     websites = query.order_by(Website.created_at.desc()).all()
 
-    # Add company name to each website
+    # Add user name and company name to each website
     result = []
     for website in websites:
         website_dict = {
@@ -107,6 +107,7 @@ def list_websites(
             "title": website.title,
             "uploader_id": website.uploader_id,
             "user_code": website.user_code,
+            "user_name": website.uploader.display_name if website.uploader else None,
             "company_name": website.uploader.company.name if website.uploader and website.uploader.company else None,
             "num_chunks": website.num_chunks,
             "status": website.status,
@@ -178,7 +179,7 @@ def list_all_websites_superadmin(
 
     websites = query.order_by(Website.created_at.desc()).all()
 
-    # Build response with company name
+    # Build response with user name and company name
     result = []
     for website in websites:
         website_dict = {
@@ -187,6 +188,7 @@ def list_all_websites_superadmin(
             "title": website.title,
             "uploader_id": website.uploader_id,
             "user_code": website.user_code,
+            "user_name": website.uploader.display_name if website.uploader else None,
             "company_name": website.uploader.company.name if website.uploader and website.uploader.company else None,
             "num_chunks": website.num_chunks,
             "status": website.status,
