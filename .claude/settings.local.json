@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.main import app; print(''App initialized successfully''); print(''Routes available:'', len([r for r in app.routes]))\")",
-      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.main import app; routes = [r for r in app.routes if hasattr(r, ''path'')]; key_routes = [r.path for r in routes if any(x in r.path for x in [''/documents'', ''/websites'', ''/query'', ''/users'', ''/companies''])]; print(''Key endpoints still available:''); [print(f''  {r}'') for r in sorted(set(key_routes))]\")"
+      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.main import app; routes = [r for r in app.routes if hasattr(r, ''path'')]; key_routes = [r.path for r in routes if any(x in r.path for x in [''/documents'', ''/websites'', ''/query'', ''/users'', ''/companies''])]; print(''Key endpoints still available:''); [print(f''  {r}'') for r in sorted(set(key_routes))]\")",
+      "Bash(mkdir:*)"
     ],
     "deny": [],
     "ask": []

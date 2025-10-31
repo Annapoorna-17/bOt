@@ -64,6 +64,23 @@ def list_companies(db: Session = Depends(get_db)):
     return companies
 
 
+@router.get("/{tenant_code}", response_model=CompanyOut, dependencies=[Depends(require_superadmin)])
+def get_company(
+    tenant_code: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get a specific company by tenant_code. Superadmin only.
+    """
+    company = db.query(Company).filter(Company.tenant_code == tenant_code).first()
+    if not company:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Company with tenant_code '{tenant_code}' not found"
+        )
+    return company
+
+
 @router.put("/{tenant_code}", response_model=CompanyOut, dependencies=[Depends(require_superadmin)])
 def update_company(
     tenant_code: str,
