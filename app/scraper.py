@@ -334,6 +334,66 @@ def upsert_website_chunks(tenant_code: str, user_code: str, url: str, chunks: Li
     return len(vectors)
 
 
+def delete_website_vectors(tenant_code: str, url: str) -> int:
+    """
+    Delete all vector chunks for a specific website from Pinecone.
+
+    Args:
+        tenant_code: Tenant identifier (used as namespace)
+        url: Website URL (full URL, e.g., "https://example.com")
+
+    Returns:
+        Number of vectors deleted (estimated based on metadata query)
+    """
+    print(f"DEBUG: Deleting vectors for website {url} in namespace {tenant_code}")
+
+    try:
+        # Query to find all vector IDs for this website
+        # We use the metadata filter to find all chunks with matching URL
+        query_response = index.query(
+            vector=[0.0] * 3072,  # Dummy vector (text-embedding-3-large dimension)
+            top_k=10000,  # High limit to get all chunks
+            namespace=tenant_code,
+            filter={
+                "$and": [
+                    {"tenant_code": {"$eq": tenant_code}},
+                    {"source_type": {"$eq": "website"}},
+                    {"url": {"$eq": url}}
+                ]
+            },
+            include_metadata=False
+        )
+
+        # Extract vector IDs
+        vector_ids = [match.id for match in query_response.matches]
+
+        if not vector_ids:
+            print(f"DEBUG: No vectors found for website {url}")
+            return 0
+
+        print(f"DEBUG: Found {len(vector_ids)} vectors to delete")
+
+        # Delete vectors in batches (Pinecone has a limit on batch size)
+        batch_size = 1000
+        deleted_count = 0
+
+        for i in range(0, len(vector_ids), batch_size):
+            batch = vector_ids[i:i + batch_size]
+            index.delete(ids=batch, namespace=tenant_code)
+            deleted_count += len(batch)
+            print(f"DEBUG: Deleted batch {i // batch_size + 1} ({len(batch)} vectors)")
+
+        print(f"DEBUG: Successfully deleted {deleted_count} vectors for website {url}")
+        return deleted_count
+
+    except Exception as e:
+        print(f"ERROR: Failed to delete vectors for website {url}: {e}")
+        import traceback
+        traceback.print_exc()
+        # Don't raise - we still want the database deletion to succeed
+        return 0
+
+
 async def scrape_and_index_website(
     url: str,
     tenant_code: str,

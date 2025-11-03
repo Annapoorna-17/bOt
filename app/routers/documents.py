@@ -9,7 +9,7 @@ from ..models import Document # We get the User model from 'models'
 from .. import models          # <--- 1. Import 'models'
 from ..schemas import UploadResponse, DocumentOut
 from typing import List, Optional
-from ..rag import document_to_pinecone
+from ..rag import document_to_pinecone, delete_document_vectors
 from ..auth import get_current_user  # <--- 2. Import your new auth function
 from ..security import require_superadmin  # Import superadmin auth
 
@@ -179,6 +179,14 @@ def delete_document(
             status_code=403,
             detail="Access denied: You can only delete your own documents unless you are an admin"
         )
+
+    # Delete vectors from Pinecone first
+    try:
+        deleted_vectors = delete_document_vectors(doc.tenant_code, doc.filename)
+        print(f"INFO: Deleted {deleted_vectors} vectors from Pinecone for document {doc.filename}")
+    except Exception as e:
+        print(f"WARNING: Failed to delete vectors from Pinecone: {e}")
+        # Continue with deletion even if Pinecone cleanup fails
 
     # Delete the physical file
     file_path = os.path.join(UPLOAD_DIR, doc.filename)

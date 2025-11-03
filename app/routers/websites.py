@@ -9,7 +9,7 @@ from ..models import Website
 from ..schemas import WebsiteSubmit, WebsiteResponse, WebsiteOut
 from ..auth import get_current_user
 from ..security import require_superadmin
-from ..scraper import scrape_and_index_website
+from ..scraper import scrape_and_index_website, delete_website_vectors
 from .. import models
 
 router = APIRouter(prefix="/websites", tags=["Websites"])
@@ -151,7 +151,15 @@ def delete_website(
             detail="Access denied: You can only delete your own websites unless you are an admin"
         )
 
-    # Delete from database (vectors stay in Pinecone but won't be listed)
+    # Delete vectors from Pinecone first
+    try:
+        deleted_vectors = delete_website_vectors(website.tenant_code, website.url)
+        print(f"INFO: Deleted {deleted_vectors} vectors from Pinecone for website {website.url}")
+    except Exception as e:
+        print(f"WARNING: Failed to delete vectors from Pinecone: {e}")
+        # Continue with deletion even if Pinecone cleanup fails
+
+    # Delete from database
     db.delete(website)
     db.commit()
 

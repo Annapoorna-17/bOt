@@ -205,7 +205,7 @@ def request_password_reset(
     # For now, we return the token directly so you can test.
     # In production, just return the message.
     return {
-        "msg": "Password reset token generated. In a real app, this would be emailed.",
+        "msg": "Password reset token generated.",
         "reset_token": password_reset_token
     }
 
