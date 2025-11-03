@@ -259,7 +259,8 @@ def get_profile_image(
         headers={
             "X-User-Code": current_user.user_code,
             "X-Display-Name": current_user.display_name,
-            "X-Profile-Image-Filename": current_user.profile_image
+            "X-Profile-Image-Filename": current_user.profile_image,
+            "Cache-Control": "no-cache, no-store, must-revalidate"
         }
     )
 
