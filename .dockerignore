@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.log
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+venv/
+.venv/
+
+# Environment files (will be provided via docker-compose or --env-file)
+.env
+*.env
+.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Documentation (not needed in container)
+CLAUDE.md
+.claude/
+
+# Uploaded files (will be mounted as volumes)
+uploaded_pdfs/
+uploaded_documents/
+profile_images/
+
+# Docker files
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# README
+README.md

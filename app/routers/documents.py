@@ -25,6 +25,27 @@ SUPPORTED_EXTENSIONS = {
     '.rst', '.log'
 }
 
+# Helper function to find document path
+def get_document_path(filename: str) -> str:
+    """
+    Find the document file path, checking both new and legacy directories.
+    Returns the full path to the document file.
+    """
+    # Check in the current upload directory first
+    path = os.path.join(UPLOAD_DIR, filename)
+    if os.path.exists(path):
+        return path
+
+    # Check legacy directory if it exists
+    legacy_dir = "uploaded_pdfs"
+    legacy_path = os.path.join(legacy_dir, filename)
+    if os.path.exists(legacy_path):
+        return legacy_path
+
+    # Return the expected path even if file doesn't exist
+    # (the calling code will handle the 404)
+    return path
+
 router = APIRouter(prefix="/documents", tags=["Documents"])
 
 @router.post("/upload", response_model=UploadResponse)
@@ -175,15 +196,15 @@ def delete_document(
     return {"message": "Document deleted successfully", "document_id": document_id}
 
 
-@router.get("/{document_id}/preview")
-def preview_document(
+@router.get("/{document_id}/download")
+def download_document(
     document_id: int,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
-    Preview/download a document.
-    Users can preview documents in their tenant. Admins can preview any document in their tenant.
+    Download a document.
+    Users can download documents in their tenant. Admins can download any document in their tenant.
     """
     doc = db.query(Document).filter(Document.id == document_id).first()
 
@@ -205,11 +226,10 @@ def preview_document(
         mime_type = "application/octet-stream"
 
     # Debug logging
-    print(f"DEBUG - Preview request (normal user):")
+    print(f"DEBUG - Download request (normal user):")
     print(f"  Document ID: {document_id}")
     print(f"  Filename: {doc.filename}")
     print(f"  UPLOAD_DIR: {UPLOAD_DIR}")
-    print(f"  UPLOAD_DIR_PDFS: {UPLOAD_DIR_PDFS}")
     print(f"  Found path: {file_path}")
 
     # Check if file exists
@@ -219,14 +239,13 @@ def preview_document(
             detail="Document file not found on server"
         )
 
-    # Return file for preview/download
+    # Return file for download
     return FileResponse(
         path=file_path,
         filename=doc.original_name,  # Use original filename for download
         media_type=mime_type,
         headers={
-            "Content-Disposition": f'inline; filename="{doc.original_name}"',  # 👈 allows preview
-            "Accept-Ranges": "bytes",  # allows partial loading
+            "Content-Disposition": f'attachment; filename="{doc.original_name}"',
         }
     )
 
@@ -274,14 +293,14 @@ def list_all_documents_superadmin(
     return result
 
 
-@router.get("/superadmin/{document_id}/preview", dependencies=[Depends(require_superadmin)])
-def preview_document_superadmin(
+@router.get("/superadmin/{document_id}/download", dependencies=[Depends(require_superadmin)])
+def download_document_superadmin(
     document_id: int,
     db: Session = Depends(get_db),
 ):
     """
-    Preview/download any document. Superadmin only.
-    Allows superadmin to preview documents from any company.
+    Download any document. Superadmin only.
+    Allows superadmin to download documents from any company.
     """
     doc = db.query(Document).filter(Document.id == document_id).first()
 
@@ -297,11 +316,10 @@ def preview_document_superadmin(
         mime_type = "application/octet-stream"
 
     # Debug logging
-    print(f"DEBUG - Preview request (superadmin):")
+    print(f"DEBUG - Download request (superadmin):")
     print(f"  Document ID: {document_id}")
     print(f"  Filename: {doc.filename}")
     print(f"  UPLOAD_DIR: {UPLOAD_DIR}")
-    print(f"  UPLOAD_DIR_PDFS: {UPLOAD_DIR_PDFS}")
     print(f"  Found path: {file_path}")
 
     # Check if file exists
@@ -311,14 +329,13 @@ def preview_document_superadmin(
             detail="Document file not found on server"
         )
 
-    # Return file for preview/download
+    # Return file for download
     return FileResponse(
         path=file_path,
         filename=doc.original_name,  # Use original filename for download
         media_type=mime_type,
         headers={
-            "Content-Disposition": f'inline; filename="{doc.original_name}"',  # 👈 allows preview
-            "Accept-Ranges": "bytes",  # allows partial loading
+            "Content-Disposition": f'attachment; filename="{doc.original_name}"',
         }
     )
 

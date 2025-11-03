@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.main import app; print(''App initialized successfully''); print(''Total routes:'', len([r for r in app.routes]))\")"
+      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.main import app; print(''App initialized successfully''); print(''Total routes:'', len([r for r in app.routes]))\")",
+      "Bash(python run.py:*)",
+      "Bash(dir /b W:bOt)",
+      "Bash(findstr:*)",
+      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.routers.documents import get_document_path; import os; print(''Testing get_document_path function...''); test_file = ''hjkl_emp1_ae1edc56.pdf''; path = get_document_path(test_file); print(f''File: {test_file}''); print(f''Path: {path}''); print(f''Exists: {os.path.exists(path)}'')\")"
     ],
     "deny": [],
     "ask": []

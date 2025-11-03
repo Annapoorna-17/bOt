@@ -1,6 +1,7 @@
 # Environment files
 .env
 *.env
+!.env.example
 
 # Python
 __pycache__/
@@ -29,6 +30,8 @@ build/
 
 # Uploaded documents
 uploaded_pdfs/
+uploaded_documents/
+profile_images/
 
 # Claude Code
 CLAUDE.md

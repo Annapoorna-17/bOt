@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  rag-service:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - HOST=0.0.0.0
+      - RELOAD=false
+      # Add your actual credentials in .env file
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PINECONE_API_KEY=${PINECONE_API_KEY}
+      - PINECONE_INDEX_NAME=${PINECONE_INDEX_NAME}
+      - DATABASE_URL=${DATABASE_URL}
+      - SUPERADMIN_TOKEN=${SUPERADMIN_TOKEN:-B946C6F2747914D24C1F6C74F5AB5291}
+    env_file:
+      - .env
+    volumes:
+      # Persist uploaded documents
+      - ./uploaded_documents:/app/uploaded_documents
+      - ./profile_images:/app/profile_images
+    restart: unless-stopped
+
+# Optional: Add MySQL service for local development
+  # mysql:
+  #   image: mysql:8.0
+  #   environment:
+  #     MYSQL_ROOT_PASSWORD: rootpassword
+  #     MYSQL_DATABASE: rag_db
+  #     MYSQL_USER: rag_user
+  #     MYSQL_PASSWORD: rag_password
+  #   ports:
+  #     - "3306:3306"
+  #   volumes:
+  #     - mysql_data:/var/lib/mysql
+
+# volumes:
+#   mysql_data:
