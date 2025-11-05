@@ -195,13 +195,21 @@ class UploadResponse(BaseModel):
     document_id: int
     stored_filename: str
     chunks_indexed: int
+    status: str = "pending"  # New field to track processing status
+
+class BatchUploadResponse(BaseModel):
+    """Response for batch document uploads."""
+    results: List[UploadResponse]
+    total: int
+    accepted: int  # Number of files accepted for processing
+    errors: List[dict]  # List of {"filename": str, "error": str}
 
 class QueryRequest(BaseModel):
     question: str
-    top_k: int = 8
+    top_k: int = 15
     user_filter: bool = False  # if True, filter by uploader user_code too
     source_type: str = "all"  # "all", "documents", or "websites" - filter by source type
-    min_score: float = 0.3  # Minimum similarity score (0.0-1.0). Results below this are filtered out as irrelevant
+    min_score: float = 0.2  # Minimum similarity score (0.0-1.0). Results below this are filtered out as irrelevant
 
 class QueryAnswer(BaseModel):
     answer: str

@@ -423,7 +423,18 @@ async def scrape_and_index_website(
     limits = httpx.Limits(max_keepalive_connections=10, max_connections=20)
     timeout = httpx.Timeout(12.0, connect=4.0)  # Reduced from 15s to 12s for faster processing
 
-    async with httpx.AsyncClient(limits=limits, timeout=timeout, follow_redirects=True) as client:
+    # Add proper headers to avoid 403 errors from sites like Wikipedia
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate",
+        "DNT": "1",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1"
+    }
+
+    async with httpx.AsyncClient(limits=limits, timeout=timeout, follow_redirects=True, headers=headers) as client:
         # Fetch HTML
         try:
             if progress_callback:

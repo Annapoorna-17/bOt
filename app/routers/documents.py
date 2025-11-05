@@ -1,13 +1,13 @@
 import os,mimetypes
 import uuid
 from datetime import datetime
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from ..db import get_db
 from ..models import Document # We get the User model from 'models'
 from .. import models          # <--- 1. Import 'models'
-from ..schemas import UploadResponse, DocumentOut
+from ..schemas import UploadResponse, BatchUploadResponse, DocumentOut
 from typing import List, Optional
 from ..rag import document_to_pinecone, delete_document_vectors
 from ..auth import get_current_user  # <--- 2. Import your new auth function
@@ -17,6 +17,48 @@ from ..security import require_superadmin  # Import superadmin auth
 
 UPLOAD_DIR = "uploaded_documents"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# Background task to process document
+def process_document_background(document_id: int, file_path: str, tenant_code: str, user_code: str, filename: str):
+    """
+    Background task to process a document and update its status.
+    This allows immediate response to user while processing happens asynchronously.
+    """
+    from ..db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        doc = db.query(Document).filter(Document.id == document_id).first()
+        if not doc:
+            print(f"ERROR: Document {document_id} not found for processing")
+            return
+
+        # Update status to processing
+        doc.status = "processing"
+        db.commit()
+
+        try:
+            # Process the document
+            chunks = document_to_pinecone(file_path, tenant_code, user_code, filename)
+
+            # Update status to completed
+            doc.status = "completed"
+            doc.num_chunks = chunks
+            doc.error_message = None
+            db.commit()
+            print(f"INFO: Successfully processed document {document_id} ({filename}): {chunks} chunks")
+
+        except Exception as e:
+            # Update status to error
+            doc.status = "error"
+            doc.error_message = str(e)
+            db.commit()
+            print(f"ERROR: Failed to process document {document_id} ({filename}): {e}")
+
+    except Exception as e:
+        print(f"ERROR: Background processing failed for document {document_id}: {e}")
+    finally:
+        db.close()
 
 # Supported file extensions
 SUPPORTED_EXTENSIONS = {
@@ -48,65 +90,94 @@ def get_document_path(filename: str) -> str:
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
 
-@router.post("/upload", response_model=UploadResponse)
-def upload_document(
-    file: UploadFile = File(...),
-    # --- 4. USE the new dependency ---
+@router.post("/upload", response_model=BatchUploadResponse)
+def upload_documents(
+    files: List[UploadFile] = File(...),
+    background_tasks: BackgroundTasks = None,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    # Validate file extension
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="Filename is required")
+    """
+    Upload one or multiple documents. Processing happens in the background.
+    Returns immediately with status "pending" for each document.
+    Use GET /documents to check processing status.
+    """
+    results = []
+    errors = []
+    accepted = 0
 
-    file_ext = os.path.splitext(file.filename.lower())[1]
-    if file_ext not in SUPPORTED_EXTENSIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file type. Supported types: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
-        )
+    for file in files:
+        try:
+            # Validate file extension
+            if not file.filename:
+                errors.append({"filename": "unknown", "error": "Filename is required"})
+                continue
 
-    # --- 5. UPDATE logic to use 'current_user' ---
-    # The 'tenant' is now 'current_user.company'
-    user_suffix = current_user.user_code.split('-', 1)[1] if '-' in current_user.user_code else current_user.user_code
-    unique_id = uuid.uuid4().hex[:8]
-    stored_name = f"{current_user.company.tenant_code}_{user_suffix}_{unique_id}{file_ext}"
-    path = os.path.join(UPLOAD_DIR, stored_name)
+            file_ext = os.path.splitext(file.filename.lower())[1]
+            if file_ext not in SUPPORTED_EXTENSIONS:
+                errors.append({
+                    "filename": file.filename,
+                    "error": f"Unsupported file type. Supported types: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
+                })
+                continue
 
-    content = file.file.read()
-    with open(path, "wb") as f:
-        f.write(content)
+            # Generate unique filename
+            user_suffix = current_user.user_code.split('-', 1)[1] if '-' in current_user.user_code else current_user.user_code
+            unique_id = uuid.uuid4().hex[:8]
+            stored_name = f"{current_user.company.tenant_code}_{user_suffix}_{unique_id}{file_ext}"
+            path = os.path.join(UPLOAD_DIR, stored_name)
 
-    doc = Document(
-        company_id=current_user.company_id,      # <-- Changed
-        uploader_id=current_user.id,             # <-- Changed
-        tenant_code=current_user.company.tenant_code, # <-- Changed
-        user_code=current_user.user_code,        # <-- Changed
-        filename=stored_name,
-        original_name=file.filename,
-        mime_type=file.content_type or "application/octet-stream",
-        status="indexed",
+            # Save file to disk
+            content = file.file.read()
+            with open(path, "wb") as f:
+                f.write(content)
+
+            # Create document record with "pending" status
+            doc = Document(
+                company_id=current_user.company_id,
+                uploader_id=current_user.id,
+                tenant_code=current_user.company.tenant_code,
+                user_code=current_user.user_code,
+                filename=stored_name,
+                original_name=file.filename,
+                mime_type=file.content_type or "application/octet-stream",
+                status="pending",  # Start with pending status
+            )
+            db.add(doc)
+            db.commit()
+            db.refresh(doc)
+
+            # Schedule background processing
+            if background_tasks:
+                background_tasks.add_task(
+                    process_document_background,
+                    doc.id,
+                    path,
+                    current_user.company.tenant_code,
+                    current_user.user_code,
+                    stored_name
+                )
+
+            results.append(UploadResponse(
+                document_id=doc.id,
+                stored_filename=stored_name,
+                chunks_indexed=0,
+                status="pending"
+            ))
+            accepted += 1
+
+        except Exception as e:
+            errors.append({
+                "filename": file.filename if file.filename else "unknown",
+                "error": str(e)
+            })
+
+    return BatchUploadResponse(
+        results=results,
+        total=len(files),
+        accepted=accepted,
+        errors=errors
     )
-    db.add(doc)
-    db.commit()
-    db.refresh(doc)
-
-    try:
-        chunks = document_to_pinecone(
-            path,
-            current_user.company.tenant_code, # <-- Changed
-            current_user.user_code,           # <-- Changed
-            stored_name
-        )
-        doc.num_chunks = chunks
-        db.commit()
-    except Exception as e:
-        doc.status = "error"
-        doc.error_message = str(e)
-        db.commit()
-        raise HTTPException(status_code=500, detail=f"Indexing failed: {e}")
-
-    return UploadResponse(document_id=doc.id, stored_filename=stored_name, chunks_indexed=doc.num_chunks)
 
 @router.get("", response_model=List[DocumentOut])
 def list_documents(

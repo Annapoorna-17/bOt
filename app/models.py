@@ -70,7 +70,7 @@ class Document(Base):
     original_name = Column(String(512), nullable=False)
     mime_type = Column(String(128), nullable=False)
     num_chunks = Column(Integer, default=0)
-    status = Column(String(32), default="indexed")  # 'indexed'/'error'
+    status = Column(String(32), default="pending")  # 'pending'/'processing'/'completed'/'error'
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -92,7 +92,7 @@ class Website(Base):
     url_hash = Column(String(64), nullable=False)  # SHA-256 hash of URL for uniqueness
     title = Column(String(512), nullable=True)  # page title if available
     num_chunks = Column(Integer, default=0)
-    status = Column(String(32), default="indexed")  # 'indexed'/'error'
+    status = Column(String(32), default="pending")  # 'pending'/'processing'/'completed'/'error'
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 

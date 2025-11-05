@@ -371,6 +371,7 @@ def _extract_document_content(path: str, file_extension: str) -> str:
 def _chunk_text(text: str, max_chars: int = 3000, overlap: int = 400):
     """
     Simple, fast chunker that respects sentence boundaries when possible.
+    Fixed to prevent infinite loops and ensure all content is captured.
     - max_chars ~ roughly 750 tokens (4 chars/token heuristic), adjust as needed.
     - overlap keeps a bit of context between chunks.
     """
@@ -381,23 +382,35 @@ def _chunk_text(text: str, max_chars: int = 3000, overlap: int = 400):
 
     chunks = []
     start = 0
-    end = 0
+
     while start < len(text):
         end = min(start + max_chars, len(text))
-        # try to cut at the last sentence boundary within the window
         window = text[start:end]
+
+        # Find sentence boundary
         cut = max(window.rfind('. '), window.rfind('? '), window.rfind('! '))
+
+        # If no sentence boundary or at end, use full window
         if cut == -1 or end == len(text):
             cut = len(window)
+        else:
+            cut += 1  # Include the punctuation
+
         chunk = window[:cut].strip()
         if chunk:
             chunks.append(chunk)
-        # move start forward with overlap
-        start = start + cut
-        start = max(0, start - overlap)
 
-        # avoid infinite loop on very small residuals
-        if end == len(text):
+        # Move forward (FIXED: ensure we always move forward)
+        next_start = start + cut - overlap
+
+        # Ensure we make progress (prevent infinite loop)
+        if next_start <= start:
+            next_start = start + max(1, cut // 2)  # Jump at least halfway
+
+        start = next_start
+
+        # Safety check: if we've reached the end, break
+        if end >= len(text):
             break
 
     # dedupe / clean
@@ -407,6 +420,8 @@ def _chunk_text(text: str, max_chars: int = 3000, overlap: int = 400):
         if c and c != last:
             out.append(c)
             last = c
+
+    print(f"DEBUG: Chunking complete, created {len(out)} chunks from {len(text)} chars")
     return out
 
 def embed_chunks(chunks: List[str]) -> List[List[float]]:
@@ -515,7 +530,7 @@ def delete_document_vectors(tenant_code: str, doc_filename: str) -> int:
         # Don't raise - we still want the database deletion to succeed
         return 0
 
-def search(tenant_code: str, query: str, top_k: int = 8, filter_user_code: str | None = None, source_type: str = "all", min_score: float = 0.3):
+def search(tenant_code: str, query: str, top_k: int = 15, filter_user_code: str | None = None, source_type: str = "all", min_score: float = 0.2):
     """
     Search for relevant content in Pinecone.
 

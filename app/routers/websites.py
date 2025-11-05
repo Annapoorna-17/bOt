@@ -1,12 +1,12 @@
 # app/routers/websites.py
 import hashlib
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models import Website
-from ..schemas import WebsiteSubmit, WebsiteResponse, WebsiteOut
+from ..schemas import WebsiteSubmit, WebsiteSubmitBatch, WebsiteResponse, WebsiteBatchResponse, WebsiteOut
 from ..auth import get_current_user
 from ..security import require_superadmin
 from ..scraper import scrape_and_index_website, delete_website_vectors
@@ -15,15 +15,68 @@ from .. import models
 router = APIRouter(prefix="/websites", tags=["Websites"])
 
 
-@router.post("/scrape", response_model=WebsiteResponse)
-async def scrape_website(
+# Background task to process website
+async def process_website_background(website_id: int, url: str, tenant_code: str, user_code: str):
+    """
+    Background task to scrape and index a website, updating its status.
+    This allows immediate response to user while processing happens asynchronously.
+    """
+    from ..db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        website = db.query(Website).filter(Website.id == website_id).first()
+        if not website:
+            print(f"ERROR: Website {website_id} not found for processing")
+            return
+
+        # Update status to processing
+        website.status = "processing"
+        db.commit()
+
+        try:
+            # Scrape and index the website
+            title, chunks = await scrape_and_index_website(
+                url=url,
+                tenant_code=tenant_code,
+                user_code=user_code,
+                max_images=10,
+                max_concurrent_images=3
+            )
+
+            # Update status to completed
+            website.status = "completed"
+            website.num_chunks = chunks
+            website.title = title
+            website.error_message = None
+            db.commit()
+            print(f"INFO: Successfully processed website {website_id} ({url}): {chunks} chunks")
+
+        except Exception as e:
+            # Update status to error
+            website.status = "error"
+            website.error_message = str(e)
+            db.commit()
+            print(f"ERROR: Failed to process website {website_id} ({url}): {e}")
+
+    except Exception as e:
+        print(f"ERROR: Background processing failed for website {website_id}: {e}")
+    finally:
+        db.close()
+
+
+@router.post("/scrape/single", response_model=WebsiteResponse)
+async def scrape_single_website(
     payload: WebsiteSubmit,
+    background_tasks: BackgroundTasks,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
-    Scrape and index a website.
-    Extracts text and analyzes images using GPT-4 Vision.
+    Scrape and index a single website (backward compatibility endpoint).
+    Processing happens in the background.
+    Returns immediately with status "pending".
+    Use GET /websites to check processing status.
     """
     # Compute URL hash for uniqueness checking
     url_hash = hashlib.sha256(payload.url.encode()).hexdigest()
@@ -40,23 +93,7 @@ async def scrape_website(
             detail="This website has already been scraped by your tenant. Delete the old entry first if you want to re-scrape."
         )
 
-    # Scrape and index FIRST to validate the URL (async with concurrent image processing)
-    try:
-        title, chunks = await scrape_and_index_website(
-            url=payload.url,
-            tenant_code=current_user.company.tenant_code,
-            user_code=current_user.user_code,
-            max_images=10,  # Process up to 10 images
-            max_concurrent_images=3  # Process 3 images at a time
-        )
-    except Exception as e:
-        # URL is invalid or scraping failed - don't save to database
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Scraping failed: {e}"
-        )
-
-    # Only create website record if scraping succeeded
+    # Create website record with "pending" status
     website = Website(
         company_id=current_user.company_id,
         uploader_id=current_user.id,
@@ -64,19 +101,110 @@ async def scrape_website(
         user_code=current_user.user_code,
         url=payload.url,
         url_hash=url_hash,
-        title=title,
-        num_chunks=chunks,
-        status="indexed",
+        title=None,  # Will be set during processing
+        num_chunks=0,
+        status="pending",  # Start with pending status
     )
     db.add(website)
     db.commit()
     db.refresh(website)
 
+    # Schedule background processing
+    background_tasks.add_task(
+        process_website_background,
+        website.id,
+        payload.url,
+        current_user.company.tenant_code,
+        current_user.user_code
+    )
+
     return WebsiteResponse(
         website_id=website.id,
         url=website.url,
-        title=website.title or "",
-        chunks_indexed=website.num_chunks
+        title="",  # Will be set during processing
+        chunks_indexed=0
+    )
+
+
+@router.post("/scrape", response_model=WebsiteBatchResponse)
+async def scrape_websites(
+    payload: WebsiteSubmitBatch,
+    background_tasks: BackgroundTasks,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Scrape and index one or multiple websites. Processing happens in the background.
+    Returns immediately with status "pending" for each website.
+    Use GET /websites to check processing status.
+    """
+    results = []
+    errors = []
+    successful = 0
+
+    for url in payload.urls:
+        try:
+            # Compute URL hash for uniqueness checking
+            url_hash = hashlib.sha256(url.encode()).hexdigest()
+
+            # Check if URL already exists for this tenant
+            existing = db.query(Website).filter(
+                Website.company_id == current_user.company_id,
+                Website.url_hash == url_hash
+            ).first()
+
+            if existing:
+                errors.append({
+                    "url": url,
+                    "error": "This website has already been scraped by your tenant. Delete the old entry first if you want to re-scrape."
+                })
+                continue
+
+            # Create website record with "pending" status
+            website = Website(
+                company_id=current_user.company_id,
+                uploader_id=current_user.id,
+                tenant_code=current_user.company.tenant_code,
+                user_code=current_user.user_code,
+                url=url,
+                url_hash=url_hash,
+                title=None,  # Will be set during processing
+                num_chunks=0,
+                status="pending",  # Start with pending status
+            )
+            db.add(website)
+            db.commit()
+            db.refresh(website)
+
+            # Schedule background processing
+            background_tasks.add_task(
+                process_website_background,
+                website.id,
+                url,
+                current_user.company.tenant_code,
+                current_user.user_code
+            )
+
+            results.append(WebsiteResponse(
+                website_id=website.id,
+                url=website.url,
+                title="",  # Will be set during processing
+                chunks_indexed=0
+            ))
+            successful += 1
+
+        except Exception as e:
+            errors.append({
+                "url": url,
+                "error": str(e)
+            })
+
+    return WebsiteBatchResponse(
+        results=results,
+        total=len(payload.urls),
+        successful=successful,
+        failed=len(errors),
+        errors=errors
     )
 
 

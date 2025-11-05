@@ -5,7 +5,10 @@
       "Bash(python run.py:*)",
       "Bash(dir /b W:bOt)",
       "Bash(findstr:*)",
-      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.routers.documents import get_document_path; import os; print(''Testing get_document_path function...''); test_file = ''hjkl_emp1_ae1edc56.pdf''; path = get_document_path(test_file); print(f''File: {test_file}''); print(f''Path: {path}''); print(f''Exists: {os.path.exists(path)}'')\")"
+      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"from app.routers.documents import get_document_path; import os; print(''Testing get_document_path function...''); test_file = ''hjkl_emp1_ae1edc56.pdf''; path = get_document_path(test_file); print(f''File: {test_file}''); print(f''Path: {path}''); print(f''Exists: {os.path.exists(path)}'')\")",
+      "Bash(dir:*)",
+      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -c \"import sys; sys.path.insert(0, ''W:/bOt''); from app.routers import documents, websites; print(''Imports successful'')\")",
+      "Bash(\"C:\\Users\\Mohak\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -m py_compile W:/bOt/app/rag.py W:/bOt/app/scraper.py)"
     ],
     "deny": [],
     "ask": []
