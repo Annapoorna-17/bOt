@@ -7,11 +7,12 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..models import Document # We get the User model from 'models'
 from .. import models          # <--- 1. Import 'models'
-from ..schemas import UploadResponse, BatchUploadResponse, DocumentOut
+from ..schemas import UploadResponse, BatchUploadResponse, DocumentOut, PaginatedResponse
 from typing import List, Optional
 from ..rag import document_to_pinecone, delete_document_vectors
 from ..auth import get_current_user  # <--- 2. Import your new auth function
 from ..security import require_superadmin  # Import superadmin auth
+from ..dependencies import get_pagination_params, PaginationParams
 
 # --- 3. REMOVED old auth imports (require_caller, require_admin, Caller) ---
 
@@ -179,17 +180,19 @@ def upload_documents(
         errors=errors
     )
 
-@router.get("", response_model=List[DocumentOut])
+@router.get("", response_model=PaginatedResponse[DocumentOut])
 def list_documents(
     # --- 6. USE new dependency ---
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
     my_docs_only: bool = False,
+    pagination: PaginationParams = Depends(get_pagination_params),
 ):
     """
-    List documents in the tenant.
+    List documents in the tenant with pagination.
     - Admins can see all documents in their tenant
     - Regular users can see all tenant docs by default, or set my_docs_only=true to see only their uploads
+    - Supports pagination via page and size query parameters (default: page=1, size=10)
     """
     # --- 7. UPDATE logic to use 'current_user' ---
     query = db.query(Document).filter(Document.company_id == current_user.company_id) # <-- Changed
@@ -198,7 +201,12 @@ def list_documents(
     if my_docs_only or current_user.role not in ["admin", "superadmin"]: # <-- Changed
         query = query.filter(Document.uploader_id == current_user.id) # <-- Changed
 
-    documents = query.order_by(Document.created_at.desc()).all()
+    # Get total count
+    total = query.count()
+
+    # Apply pagination
+    offset = (pagination.page - 1) * pagination.size
+    documents = query.order_by(Document.created_at.desc()).offset(offset).limit(pagination.size).all()
 
     # Add filepath, user name, and company name to each document
     result = []
@@ -219,7 +227,17 @@ def list_documents(
         }
         result.append(doc_dict)
 
-    return result
+    # Calculate total pages
+    import math
+    pages = math.ceil(total / pagination.size) if total > 0 else 0
+
+    return PaginatedResponse(
+        items=result,
+        total=total,
+        page=pagination.page,
+        size=pagination.size,
+        pages=pages
+    )
 
 @router.delete("/{document_id}")
 def delete_document(
@@ -329,16 +347,19 @@ def download_document(
     )
 
 
-@router.get("/superadmin/all", response_model=List[DocumentOut], dependencies=[Depends(require_superadmin)])
+@router.get("/superadmin/all", response_model=PaginatedResponse[DocumentOut], dependencies=[Depends(require_superadmin)])
 def list_all_documents_superadmin(
     db: Session = Depends(get_db),
     tenant_code: Optional[str] = None,
+    pagination: PaginationParams = Depends(get_pagination_params),
 ):
     """
-    List all documents across all companies. Superadmin only.
+    List all documents across all companies with pagination. Superadmin only.
 
     Query Parameters:
     - tenant_code: Optional filter to show documents from a specific company by tenant code
+    - page: Page number (default: 1)
+    - size: Page size (default: 10, max: 100)
     """
     query = db.query(Document)
 
@@ -348,7 +369,12 @@ def list_all_documents_superadmin(
             models.Company.tenant_code == tenant_code
         )
 
-    documents = query.order_by(Document.created_at.desc()).all()
+    # Get total count
+    total = query.count()
+
+    # Apply pagination
+    offset = (pagination.page - 1) * pagination.size
+    documents = query.order_by(Document.created_at.desc()).offset(offset).limit(pagination.size).all()
 
     # Build response with user name and company name
     result = []
@@ -369,7 +395,17 @@ def list_all_documents_superadmin(
         }
         result.append(doc_dict)
 
-    return result
+    # Calculate total pages
+    import math
+    pages = math.ceil(total / pagination.size) if total > 0 else 0
+
+    return PaginatedResponse(
+        items=result,
+        total=total,
+        page=pagination.page,
+        size=pagination.size,
+        pages=pages
+    )
 
 
 @router.get("/superadmin/{document_id}/download", dependencies=[Depends(require_superadmin)])

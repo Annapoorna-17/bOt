@@ -1,6 +1,9 @@
 from pydantic import BaseModel, Field, EmailStr, field_validator
-from typing import Optional, List
+from typing import Optional, List, Generic, TypeVar
 from datetime import datetime
+
+# Generic type for paginated responses
+T = TypeVar('T')
 
 class CompanyCreate(BaseModel):
     name: str
@@ -264,5 +267,16 @@ class WebsiteOut(BaseModel):
     status: str
     created_at: datetime
     error_message: Optional[str] = None
+    class Config:
+        from_attributes = True
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    """Generic paginated response schema."""
+    items: List[T]
+    total: int
+    page: int
+    size: int
+    pages: int
+
     class Config:
         from_attributes = True

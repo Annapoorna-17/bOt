@@ -6,11 +6,12 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models import Website
-from ..schemas import WebsiteSubmit, WebsiteSubmitBatch, WebsiteResponse, WebsiteBatchResponse, WebsiteOut
+from ..schemas import WebsiteSubmit, WebsiteSubmitBatch, WebsiteResponse, WebsiteBatchResponse, WebsiteOut, PaginatedResponse
 from ..auth import get_current_user
 from ..security import require_superadmin
 from ..scraper import scrape_and_index_website, delete_website_vectors
 from .. import models
+from ..dependencies import get_pagination_params, PaginationParams
 
 router = APIRouter(prefix="/websites", tags=["Websites"])
 
@@ -208,23 +209,30 @@ async def scrape_websites(
     )
 
 
-@router.get("", response_model=List[WebsiteOut])
+@router.get("", response_model=PaginatedResponse[WebsiteOut])
 def list_websites(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
     my_websites_only: bool = False,
+    pagination: PaginationParams = Depends(get_pagination_params),
 ):
     """
-    List scraped websites in your tenant.
+    List scraped websites in your tenant with pagination.
     - Admins can see all websites in their tenant
     - Regular users can see all tenant websites by default, or set my_websites_only=true
+    - Supports pagination via page and size query parameters (default: page=1, size=10)
     """
     query = db.query(Website).filter(Website.company_id == current_user.company_id)
 
     if my_websites_only or current_user.role not in ["admin", "superadmin"]:
         query = query.filter(Website.uploader_id == current_user.id)
 
-    websites = query.order_by(Website.created_at.desc()).all()
+    # Get total count
+    total = query.count()
+
+    # Apply pagination
+    offset = (pagination.page - 1) * pagination.size
+    websites = query.order_by(Website.created_at.desc()).offset(offset).limit(pagination.size).all()
 
     # Add user name and company name to each website
     result = []
@@ -244,7 +252,17 @@ def list_websites(
         }
         result.append(website_dict)
 
-    return result
+    # Calculate total pages
+    import math
+    pages = math.ceil(total / pagination.size) if total > 0 else 0
+
+    return PaginatedResponse(
+        items=result,
+        total=total,
+        page=pagination.page,
+        size=pagination.size,
+        pages=pages
+    )
 
 
 @router.delete("/{website_id}")
@@ -294,16 +312,19 @@ def delete_website(
     return {"message": "Website deleted successfully", "website_id": website_id}
 
 
-@router.get("/superadmin/all", response_model=List[WebsiteOut], dependencies=[Depends(require_superadmin)])
+@router.get("/superadmin/all", response_model=PaginatedResponse[WebsiteOut], dependencies=[Depends(require_superadmin)])
 def list_all_websites_superadmin(
     db: Session = Depends(get_db),
     tenant_code: Optional[str] = None,
+    pagination: PaginationParams = Depends(get_pagination_params),
 ):
     """
-    List all websites across all companies. Superadmin only.
+    List all websites across all companies with pagination. Superadmin only.
 
     Query Parameters:
     - tenant_code: Optional filter to show websites from a specific company by tenant code
+    - page: Page number (default: 1)
+    - size: Page size (default: 10, max: 100)
     """
     query = db.query(Website)
 
@@ -313,7 +334,12 @@ def list_all_websites_superadmin(
             models.Company.tenant_code == tenant_code
         )
 
-    websites = query.order_by(Website.created_at.desc()).all()
+    # Get total count
+    total = query.count()
+
+    # Apply pagination
+    offset = (pagination.page - 1) * pagination.size
+    websites = query.order_by(Website.created_at.desc()).offset(offset).limit(pagination.size).all()
 
     # Build response with user name and company name
     result = []
@@ -333,4 +359,14 @@ def list_all_websites_superadmin(
         }
         result.append(website_dict)
 
-    return result
+    # Calculate total pages
+    import math
+    pages = math.ceil(total / pagination.size) if total > 0 else 0
+
+    return PaginatedResponse(
+        items=result,
+        total=total,
+        page=pagination.page,
+        size=pagination.size,
+        pages=pages
+    )

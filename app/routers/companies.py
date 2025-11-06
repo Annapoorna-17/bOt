@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from ..db import get_db, Base, engine
 from ..models import Company, User
-from ..schemas import CompanyCreate, CompanyUpdate, CompanyOut, UserCreate, UserOut, SuperadminCreate, AdminUserUpdate
+from ..schemas import CompanyCreate, CompanyUpdate, CompanyOut, UserCreate, UserOut, SuperadminCreate, AdminUserUpdate, PaginatedResponse
 from ..security import require_superadmin, SUPERADMIN_SYSTEM_TENANT
 from ..auth import hash_password
+from ..dependencies import get_pagination_params, PaginationParams
 
 router = APIRouter(prefix="/superadmin/companies", tags=["Superadmin"])
 
@@ -55,22 +56,52 @@ def create_company(payload: CompanyCreate, db: Session = Depends(get_db)):
     return c
 
 
-@router.get("", response_model=list[CompanyOut], dependencies=[Depends(require_superadmin)])
-def list_companies(db: Session = Depends(get_db)):
+@router.get("", response_model=PaginatedResponse[CompanyOut], dependencies=[Depends(require_superadmin)])
+def list_companies(
+    db: Session = Depends(get_db),
+    pagination: PaginationParams = Depends(get_pagination_params),
+):
     """
-    List all companies. Superadmin only.
+    List all companies with pagination. Superadmin only.
+    - Supports pagination via page and size query parameters (default: page=1, size=10)
     """
-    companies = db.query(Company).order_by(Company.created_at.desc()).all()
-    return companies
+    # Get total count
+    total = db.query(Company).count()
+
+    # Apply pagination
+    offset = (pagination.page - 1) * pagination.size
+    companies = db.query(Company).order_by(Company.created_at.desc()).offset(offset).limit(pagination.size).all()
+
+    # Calculate total pages
+    import math
+    pages = math.ceil(total / pagination.size) if total > 0 else 0
+
+    return PaginatedResponse(
+        items=companies,
+        total=total,
+        page=pagination.page,
+        size=pagination.size,
+        pages=pages
+    )
 
 
-@router.get("/admins", response_model=list[UserOut], dependencies=[Depends(require_superadmin)])
-def list_all_company_admins(db: Session = Depends(get_db)):
+@router.get("/admins", response_model=PaginatedResponse[UserOut], dependencies=[Depends(require_superadmin)])
+def list_all_company_admins(
+    db: Session = Depends(get_db),
+    pagination: PaginationParams = Depends(get_pagination_params),
+):
     """
-    List all admin users across all companies with their company names.
+    List all admin users across all companies with their company names and pagination.
     Superadmin only.
+    - Supports pagination via page and size query parameters (default: page=1, size=10)
     """
-    admins = db.query(User).filter(User.role.in_(["admin", "superadmin"])).order_by(User.created_at.desc()).all()
+    # Get total count
+    query = db.query(User).filter(User.role.in_(["admin", "superadmin"]))
+    total = query.count()
+
+    # Apply pagination
+    offset = (pagination.page - 1) * pagination.size
+    admins = query.order_by(User.created_at.desc()).offset(offset).limit(pagination.size).all()
 
     # Add company_name to each admin
     result = []
@@ -95,7 +126,17 @@ def list_all_company_admins(db: Session = Depends(get_db)):
         }
         result.append(admin_dict)
 
-    return result
+    # Calculate total pages
+    import math
+    pages = math.ceil(total / pagination.size) if total > 0 else 0
+
+    return PaginatedResponse(
+        items=result,
+        total=total,
+        page=pagination.page,
+        size=pagination.size,
+        pages=pages
+    )
 
 
 @router.get("/admins/{admin_id}", response_model=UserOut, dependencies=[Depends(require_superadmin)])

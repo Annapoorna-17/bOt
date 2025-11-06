@@ -10,10 +10,11 @@ from PIL import Image
 
 from ..db import get_db
 from ..models import User
-from ..schemas import UserCreate, UserOut, UserUpdate, AdminUserUpdate
+from ..schemas import UserCreate, UserOut, UserUpdate, AdminUserUpdate, PaginatedResponse
 from ..auth import get_current_user, hash_password
 from ..security import SUPERADMIN_SYSTEM_TENANT
 from .. import models
+from ..dependencies import get_pagination_params, PaginationParams
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -101,19 +102,21 @@ def create_user(
     return u
 
 
-@router.get("", response_model=List[UserOut])
+@router.get("", response_model=PaginatedResponse[UserOut])
 def list_users(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    include_inactive: bool = False
+    include_inactive: bool = False,
+    pagination: PaginationParams = Depends(get_pagination_params),
 ):
     """
-    List users.
+    List users with pagination.
     - Superadmins can see all users across all tenants.
     - Admins can only see users within their own tenant.
     By default, only active users are returned. Use ?include_inactive=true to see all.
+    - Supports pagination via page and size query parameters (default: page=1, size=10)
     """
-    
+
     # 1. Start the base query (no filters yet)
     users_query = db.query(models.User) # <-- Start with just the User model
 
@@ -121,15 +124,19 @@ def list_users(
     if current_user.role != "superadmin":
         # If NOT superadmin, restrict to their own company
         users_query = users_query.filter(models.User.company_id == current_user.company_id)
-    
+
     # 3. Conditionally apply active filter
     if not include_inactive:
-        users_query = users_query.filter(models.User.is_active == True) 
+        users_query = users_query.filter(models.User.is_active == True)
 
-    # 4. Apply ordering and execute the query
-    users = users_query.order_by(models.User.created_at.desc()).all()
+    # 4. Get total count
+    total = users_query.count()
 
-    # 5. Format the result
+    # 5. Apply pagination
+    offset = (pagination.page - 1) * pagination.size
+    users = users_query.order_by(models.User.created_at.desc()).offset(offset).limit(pagination.size).all()
+
+    # 6. Format the result
     result = []
     for user in users:
         user_dict = {
@@ -152,7 +159,17 @@ def list_users(
         }
         result.append(user_dict)
 
-    return result
+    # 7. Calculate total pages
+    import math
+    pages = math.ceil(total / pagination.size) if total > 0 else 0
+
+    return PaginatedResponse(
+        items=result,
+        total=total,
+        page=pagination.page,
+        size=pagination.size,
+        pages=pages
+    )
 
 
 # ============================================================
